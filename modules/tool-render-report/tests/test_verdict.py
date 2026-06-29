@@ -1,6 +1,5 @@
 """Tests for parse_verdict() in verdict.py — written BEFORE implementation (TDD RED)."""
 
-import pytest
 from amplifier_module_tool_render_report.verdict import CRITERIA, parse_verdict
 
 

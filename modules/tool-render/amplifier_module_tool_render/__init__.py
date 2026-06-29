@@ -161,7 +161,7 @@ class RenderTool:
             )
 
 
-async def mount(coordinator=None, config=None):
+async def mount(coordinator: ModuleCoordinator, config=None) -> "RenderTool":
     tool = RenderTool()
     await coordinator.mount("tools", tool, name=tool.name)
     logger.info("Mounted tool-render")

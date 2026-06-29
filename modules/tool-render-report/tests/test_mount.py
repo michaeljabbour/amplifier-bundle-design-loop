@@ -8,7 +8,6 @@ Written BEFORE implementation (RED phase):
 import base64
 from pathlib import Path
 
-import pytest
 from amplifier_core.testing import create_test_coordinator
 
 from amplifier_module_tool_render_report import RenderReportTool, mount

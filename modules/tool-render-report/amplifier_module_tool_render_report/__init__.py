@@ -153,7 +153,7 @@ class RenderReportTool:
             )
 
 
-async def mount(coordinator: Any = None, config: Any = None) -> RenderReportTool:
+async def mount(coordinator: ModuleCoordinator, config: Any = None) -> RenderReportTool:
     """Mount the render-report tool onto the coordinator.
 
     Satisfies the Iron Law: mount() must call coordinator.mount('tools', tool, name=tool.name).
