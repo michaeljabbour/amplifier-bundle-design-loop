@@ -162,4 +162,7 @@ class RenderTool:
 
 
 async def mount(coordinator=None, config=None):
-    raise NotImplementedError("mount implemented in Task 6")
+    tool = RenderTool()
+    await coordinator.mount("tools", tool, name=tool.name)
+    logger.info("Mounted tool-render")
+    return tool
