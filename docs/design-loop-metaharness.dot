@@ -1,0 +1,44 @@
+// Two-clock metaharness: fast artifact loop + slow self-PR loop; ledger is the shared capital account.
+digraph metaharness {
+  rankdir=TB; bgcolor="white"; pad=0.5; nodesep=0.45; ranksep=0.7; fontname="Helvetica";
+  labelloc="t"; fontsize=21; fontcolor="#1A1A1A";
+  label=<<b>The two-clock metaharness</b><br/><font point-size="12" color="#6B6357">Fast loop converges an artifact · slow loop turns run-exhaust into permanent harness capital · follow the green</font>>;
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, margin="0.16,0.1", penwidth=1.3, color="#CFC9BC"];
+  edge [color="#9A9182", penwidth=1.4, fontname="Helvetica", fontsize=10, fontcolor="#6B6357"];
+
+  human [label="YOU — two altitudes", fillcolor="#ECE3F5", color="#6B4E9E", fontcolor="#3F2E63", penwidth=1.8];
+
+  subgraph cluster_fast {
+    label="FAST CLOCK — converge one artifact (B)"; fontsize=11; fontcolor="#6B6357";
+    style="rounded,filled"; fillcolor="#FAF8F3"; color="#E3DCCF"; margin=12;
+    fast [label="Planner → Maker → Render → Lints → Judge\ngoverned by the deterministic Controller", fillcolor="#F1ECE3", color="#9A9182"];
+    chips [label="THE CHIPS THAT COMPOUND\nLints · Judge rubric · Planner fix-library · Controller policy", fillcolor="#EDEDED", color="#707070"];
+  }
+
+  ledger [label="LEDGER — the capital account (cross-run)\nrun · pass · signature · batch · scores | reject_reason · Δ · rubric_SHA · cost",
+          shape=cylinder, fillcolor="#ECECEC", color="#707070", penwidth=1.7];
+
+  subgraph cluster_slow {
+    label="SLOW CLOCK — improve the harness (a self-PR loop) → C"; fontsize=11; fontcolor="#2E5A38";
+    style="rounded,filled"; fillcolor="#F2F8F3"; color="#BFD9C4"; margin=12;
+    detect [label="Mine exhaust:\nrecurring Judge catch\nfor a signature", fillcolor="#E1EFE3", color="#4F8A5B", fontcolor="#2E5A38"];
+    gate   [label="Promotion gate (min-not-mean)\nfires on NONE of the exemplar bank\n+ ≥N distinct runs + deterministic", fillcolor="#E1EFE3", color="#4F8A5B", fontcolor="#2E5A38"];
+    pr     [label="Draft a PULL REQUEST\nnew lint + regression test\n+ rubric-version bump", fillcolor="#E1EFE3", color="#4F8A5B", fontcolor="#2E5A38"];
+  }
+
+  // fast loop writes down to the ledger
+  fast -> ledger [label="writes every pass\n(incl. rejects + reasons)"];
+  // slow loop reads exhaust up
+  ledger -> detect [label="reads exhaust", color="#4F8A5B", fontcolor="#2E5A38"];
+  detect -> gate -> pr [color="#4F8A5B"];
+  // human governs two altitudes
+  fast -> human [label="taste fork (per artifact,\ngets rarer over time)", style=dashed, constraint=false];
+  pr -> human [label="ratify = merge the PR\n(rare · permanent)", color="#4F8A5B", fontcolor="#2E5A38"];
+  // merged mutation lands on the chips → next run inherits it free
+  human -> chips [label="merged → bundle-cache refresh\n→ next run inherits it free", color="#4F8A5B", fontcolor="#2E5A38", penwidth=1.7];
+
+  { rank=same; ledger; detect; }
+
+  note [shape=note, fillcolor="#FFFDF8", color="#D8D2C7", fontsize=10, fontcolor="#6B6357",
+        label="C-signal: escalation-rate per run falls while min-quality holds, and judge-tokens per run fall.\nThe Maker gets no green landing — never mutate the executor, only what it's told / checked against / stopped by."];
+}

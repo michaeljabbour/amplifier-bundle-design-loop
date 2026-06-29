@@ -100,3 +100,18 @@ Validated with `amplifier:amplifier-expert` and `foundation:zen-architect`. The
 controller is realized by composition (a `recipes` convergence recipe for the greedy
 loop; the `attractor` `loop-pipeline` for beam/evolutionary width) — not a bespoke
 orchestrator. See the design notes in `docs/`.
+
+### Compounding (the metaharness)
+
+The governed loop above is *automation* (tier B): it converges one artifact. The
+**compounding** tier (C) comes from a second, slower clock — the harness improving
+itself. Recurring judgments the (expensive) Judge keeps making get ratcheted
+**leftward** into cheap deterministic lints, shipped as **pull requests** to this
+bundle (new lint + regression test + rubric-version bump), ratified by a human merge,
+and inherited free by the next run. The ledger is the shared capital account between
+the two clocks.
+
+![The two-clock metaharness](docs/design-loop-metaharness.png)
+
+The C-signal: escalation-rate per run falls while quality holds, and judge-tokens per
+run fall. Full spec in `docs/HARNESS_DESIGN.md` (forthcoming).

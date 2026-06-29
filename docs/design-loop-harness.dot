@@ -1,46 +1,36 @@
-// The target agentic harness: a deterministic controller around a judge<->maker loop.
+// Clean single governed loop: straight sweep, explicit two-gate sequence, visible ledger writers.
 digraph harness {
-  rankdir=TB; bgcolor="white"; pad=0.5; nodesep=0.45; ranksep=0.65; fontname="Helvetica";
-  labelloc="t"; fontsize=22; fontcolor="#1A1A1A";
-  label=<<b>The design harness — a governed judge ↔ maker loop</b><br/><font point-size="12" color="#6B6357">You set the bar once; the loop grinds toward it and only calls you on a real fork</font>>;
-  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=12, margin="0.18,0.12", penwidth=1.3, color="#CFC9BC"];
+  rankdir=LR; bgcolor="white"; pad=0.5; nodesep=0.4; ranksep=0.7; fontname="Helvetica";
+  labelloc="t"; fontsize=21; fontcolor="#1A1A1A";
+  label=<<b>The governed loop (one artifact)</b><br/><font point-size="12" color="#6B6357">Planner → Maker → Render → Lints → Judge, then the Controller decides once</font>>;
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=12, margin="0.17,0.11", penwidth=1.3, color="#CFC9BC"];
   edge [color="#9A9182", penwidth=1.4, fontname="Helvetica", fontsize=10, fontcolor="#6B6357"];
 
-  human [label="You — set the bar, budget\n& no-regress floors (once)", fillcolor="#ECE3F5", color="#6B4E9E", fontcolor="#3F2E63"];
   controller [label="CONTROLLER  (deterministic — no LLM)\nbudget · best-so-far · rollback · stopping rules", fillcolor="#ECECEC", color="#707070", fontcolor="#2A2A2A", penwidth=1.9];
+  planner [label="Planner\nreads ledger → worst-quality\nfix-batch (skips dead fixes)", fillcolor="#F6E0D6", color="#C2613F", fontcolor="#7A3A22"];
+  maker   [label="Maker\napply fixes → real HTML\n(never sees the rubric)", fillcolor="#F6E0D6", color="#C2613F", fontcolor="#7A3A22"];
+  render  [label="Render in a\nsandboxed iframe\n→ screenshot", fillcolor="#ECECEC", color="#707070"];
+  lints   [label="LINTS — hard gate\nrenders-ok · contrast · focus ·\nDOM bloat · text-to-chrome", fillcolor="#ECECEC", color="#707070", penwidth=1.7];
+  judge   [label="JUDGE — frozen rubric\nscores 8 qualities from the\npicture only (never sees maker)", fillcolor="#D9ECEA", color="#2F6F6A", fontcolor="#1E4F4A", penwidth=1.7];
+  ledger  [label="LEDGER (append-only, cross-run)\nco-authored: lints append result ·\njudge appends score · controller seals", shape=cylinder, fillcolor="#ECECEC", color="#707070"];
+  done     [label="Done →\nbest-so-far", fillcolor="#E1EFE3", color="#4F8A5B", fontcolor="#2E5A38"];
+  escalate [label="Escalate to you\nplateau · regression · taste fork", fillcolor="#ECE3F5", color="#6B4E9E", fontcolor="#3F2E63"];
 
-  planner [label="Planner\nreads the ledger → picks the\nworst quality's fix-batch\n(skips dead fixes)", fillcolor="#F6E0D6", color="#C2613F", fontcolor="#7A3A22"];
-  maker   [label="Maker\napplies the fixes → real HTML\n(never sees the rubric)", fillcolor="#F6E0D6", color="#C2613F", fontcolor="#7A3A22"];
-  render  [label="Render in a sandboxed iframe\n→ screenshot", fillcolor="#ECECEC", color="#707070"];
-  lints   [label="Objective lints (un-gameable)\nrenders-ok · contrast · focus ·\nDOM bloat · text-to-chrome\n— hard gate", fillcolor="#ECECEC", color="#707070"];
-  judge   [label="Judge — frozen rubric\nscores the 8 qualities from the\npicture only (never sees the maker)", fillcolor="#D9ECEA", color="#2F6F6A", fontcolor="#1E4F4A"];
-  ledger  [label="Ledger (append-only)\nevery pass: scores · fixes · Δ\n— the memory", shape=cylinder, fillcolor="#ECECEC", color="#707070"];
+  // straight inner sweep
+  planner -> maker -> render -> lints;
+  lints -> judge [label="pass", color="#4F8A5B", fontcolor="#2E5A38", penwidth=1.7];
+  judge -> ledger;
+  { rank=same; planner; maker; render; lints; judge; ledger; }
 
-  done     [label="Done → return best-so-far", fillcolor="#E1EFE3", color="#4F8A5B", fontcolor="#2E5A38"];
-  escalate [label="Escalate to you\nplateau · regression · real taste fork", fillcolor="#ECE3F5", color="#6B4E9E", fontcolor="#3F2E63"];
-
-  human -> controller [label="authors policy once", style=dashed, color="#6B4E9E", fontcolor="#6B4E9E"];
-  controller -> planner [label="continue"];
-  planner -> maker -> render -> lints -> judge -> ledger;
-  ledger -> controller [label="scores · Δ"];
-  ledger -> planner [label="reads memory", style=dashed, constraint=false];
-  lints -> controller [label="broken → reject", style=dashed, color="#C2613F", fontcolor="#C2613F", constraint=false];
-  controller -> done [label="score ≥ bar / budget out"];
-  controller -> escalate [label="plateau · regression · fork"];
-  escalate -> human [style=dashed, color="#6B4E9E"];
-  { rank=same; planner; maker; render; lints; judge; }
+  // controller as the single decision point
+  controller -> planner [label="continue", weight=4];
+  ledger -> controller [label="scores · Δ", constraint=false];
+  lints -> controller [label="fail → reject\n(skip the judge)", style=dashed, color="#C2613F", fontcolor="#C2613F", constraint=false];
+  controller -> done [label="score ≥ bar /\nbudget out"];
+  controller -> escalate [label="plateau ·\nregression · fork"];
 
   maca [shape=note, fillcolor="#FFFDF8", color="#D8D2C7", fontsize=10, fontcolor="#6B6357",
-        label="Optimises the WORST quality + the deltas — never the sum.\nRejects any pass that drops a quality below best-so-far (no A-breaks-B).\nThe 'after' is always a real render of real HTML — never an AI dream."];
+        label="Score the WORST quality + the deltas — never the sum.\nReject any pass that drops a quality below best-so-far."];
+  { rank=same; controller; maca; }
   controller -> maca [style=invis];
-
-  subgraph cluster_key {
-    label="colour key"; fontsize=10; fontcolor="#6B6357"; style="rounded,filled"; fillcolor="#FBF9F4"; color="#E3DCCF";
-    k_h [label="you (policy / escalation)", fillcolor="#ECE3F5", color="#6B4E9E", fontsize=10];
-    k_j [label="judge (frozen rubric)", fillcolor="#D9ECEA", color="#2F6F6A", fontsize=10];
-    k_g [label="makers (planner · maker)", fillcolor="#F6E0D6", color="#C2613F", fontsize=10];
-    k_i [label="deterministic infrastructure", fillcolor="#ECECEC", color="#707070", fontsize=10];
-    k_d [label="exit", fillcolor="#E1EFE3", color="#4F8A5B", fontsize=10];
-    k_h -> k_j -> k_g -> k_i -> k_d [style=invis];
-  }
 }
