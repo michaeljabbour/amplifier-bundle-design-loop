@@ -220,7 +220,7 @@ _COMMANDS = {
     "extract": extract, "lintflags": lintflags, "baserec": baserec,
     "lintrec": lintrec, "passrec": passrec, "result": result,
     "lintresult": lintresult, "gateprep": gateprep, "verdict": verdict,
-    "summary": summary,
+    "summary": summary, "field": field, "get": get, "gateout": gateout,
 }
 
 
