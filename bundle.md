@@ -31,7 +31,7 @@ This bundle adds an on-demand design-quality judge on top of foundation and desi
 
 1. **Renders** the artifact to a screenshot (via `tool-render`).
 2. **Scores** the rendered output against the 8-criteria design rubric.
-3. **Builds a target state** — a written spec (A) and optionally a reference screenshot (B) that shows what the artifact should become.
+3. **Builds a target state** — improved real HTML code (A) and a screenshot render of that code (B). B is always a render of A, never an image-gen concept.
 4. **Returns a self-contained editorial HTML report** plus a one-line verdict.
 
 The judge runs **once and returns** — it does not enter a correction loop. If you want iterative improvements, call it again with the revised artifact.
