@@ -1,0 +1,28 @@
+// How the design judge works — plain-language workflow.
+// Render: dot -Tpng -Gdpi=150 docs/design-loop-workflow.dot -o docs/design-loop-workflow.png
+digraph design_loop {
+  rankdir=LR;
+  bgcolor="white";
+  pad=0.4;
+  nodesep=0.5;
+  ranksep=0.75;
+  fontname="Helvetica";
+  labelloc="t";
+  fontsize=22;
+  fontcolor="#1A1A1A";
+  label="How the design judge works";
+
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=13,
+        color="#D8D2C7", fillcolor="#F5F2EC", fontcolor="#1A1A1A",
+        margin="0.24,0.17", penwidth=1.2];
+  edge [color="#9A9182", penwidth=1.5, arrowsize=0.85];
+
+  start  [label="You share a design\n(a web page, a link,\nor a screenshot)", fillcolor="#ECE7DD"];
+  shot   [label="It takes a picture\nof the design"];
+  score  [label="It scores the design\non 8 simple qualities\n(clarity, elegance,\nrestraint, and more)"];
+  build  [label="It builds a better version\nand takes a picture of it"];
+  report [label="You get a clean report:\nthe score, what to fix,\nand a before \u2192 after",
+          fillcolor="#2F6F6A", fontcolor="white", color="#24544F"];
+
+  start -> shot -> score -> build -> report;
+}

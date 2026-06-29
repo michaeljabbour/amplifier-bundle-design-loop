@@ -1,92 +1,88 @@
 # amplifier-bundle-design-loop
 
-An Amplifier bundle providing an on-demand **design-judge** agent and three supporting tools for AI-driven UI design critique and iteration.
+An Amplifier bundle that adds an on-demand **design judge**: give it any UI — a web
+page, a link, or a screenshot — and it scores the design, builds a better version,
+and hands back a clean report.
 
-## What it does
+## How it works
 
-Delegate to `design-loop:design-judge` with any UI artifact — raw HTML, a URL, or an image — and the judge will:
+![How the design judge works](docs/design-loop-workflow.png)
 
-1. **Score** the rendered design against an 8-criteria rubric. Each criterion is scored 0–4 (0 = absent or harmful, 4 = exemplary); the total ranges from 0–32:
+1. **You share a design** — raw HTML, a URL, or an image.
+2. **It scores the design** against 8 plain-language qualities (0–4 each, 32 total).
+3. **It builds a better version** — improved HTML, plus a screenshot of that improved page.
+4. **You get a report** — the score, the highest-value fixes, and a before → after.
 
-   | Criterion | What it measures |
-   |-----------|-----------------|
-   | **clarity** | Hierarchy, purpose, and information scannability obvious to a first-time visitor |
-   | **elegance** | Visual language feels refined and intentional rather than assembled from defaults |
-   | **restraint** | Actively resists slop defaults (purple→blue gradients, heavy shadows, generic hero, Inter by default, equal-weight card grids) |
-   | **empowerment** | User feels capable, informed, and in control |
-   | **agency** | Affordances are clear; user immediately knows what they can do |
-   | **ease** | Cognitive load is low; primary path to action is obvious |
-   | **character** | Distinctive, memorable personality that sets it apart |
-   | **point** | Clear, singular focus; design knows what it exists to accomplish |
+The judge runs **once and returns**. It does not loop.
 
-2. **Build a target state** — improved HTML (document A) plus a reference screenshot (image B). B is always a Playwright render of A; it is never an image-generation dream. If the render fails, the tool returns `"unavailable"` rather than fabricating a result.
+### The 8 qualities
 
-3. **Return** a self-contained editorial HTML report (no external HTTP/HTTPS resources, no `<script>` tags) plus a one-line verdict summary.
+| Quality | What it asks |
+|---------|--------------|
+| **clarity** | Can a first-time visitor instantly tell what this is and where to look? |
+| **elegance** | Does it feel refined and intentional, not assembled from defaults? |
+| **restraint** | Does it resist slop defaults (purple→blue gradients, heavy shadows, generic hero, default Inter, equal-weight card grids)? |
+| **empowerment** | Does the user feel capable and in control? |
+| **agency** | Is it obvious what the user can do? |
+| **ease** | Is the path to the main action low-effort and clear? |
+| **character** | Does it have a distinctive, memorable personality? |
+| **point** | Does the design know the one thing it exists to do? |
 
-The judge runs **once and returns**. It does not enter a correction loop.
+## Quick start
+
+Add the bundle, then just talk to the judge:
+
+```bash
+amplifier bundle add git+https://github.com/michaeljabbour/amplifier-bundle-design-loop@main --app
+amplifier
+```
+
+```text
+> Use the design-judge to judge fixtures/slop.html — score it, build a better
+  version, and give me the report.
+```
+
+You can point it at a file path, a URL, or paste raw HTML.
+
+> **One-time setup:** the judge takes screenshots with a headless browser. If you
+> see an error about a missing Chromium browser, run this once:
+> `uvx --from playwright playwright install chromium`
 
 ## Architecture
 
-| Brick | Type | Responsibility |
-|-------|------|----------------|
-| `tool-render` | Tool | Renders HTML files, URLs, or passes images through; errors are surfaced as ToolResult failures, never crashes |
-| `tool-render-report` | Tool | Assembles a self-contained HTML report from scores + images; handles `scores_unavailable` honestly |
-| `tool-target-state` | Tool | Writes improved HTML (A), renders it to a screenshot (B), returns `"unavailable"` on any failure |
-| `design-judge` | Agent (`model_role: vision`) | Orchestrates the render → score → target-state → report flow exactly once; carries the full 8-criteria rubric as a context sink |
+A thin bundle: it includes `amplifier-foundation` and
+`amplifier-bundle-design-intelligence` unchanged, and adds only the measurement layer.
 
-The bundle is thin: it includes `amplifier-foundation` and `amplifier-bundle-design-intelligence` unchanged and adds only the measurement layer (render → score → target-state → report).
+| Component | Type | Responsibility |
+|-----------|------|----------------|
+| `design-judge` | Agent (`model_role: vision`) | Runs the whole flow once; carries the 8-quality rubric |
+| `tool-render` | Tool | Turns HTML / a URL / an image into a screenshot |
+| `tool-target-state` | Tool | Writes the improved HTML and renders it; returns `"unavailable"` on failure |
+| `tool-render-report` | Tool | Builds the self-contained HTML report |
 
-## Use it
-
-```bash
-# Register the bundle from the local checkout
-amplifier bundle add ./bundle.md
-
-# Run the judge on the sample slop fixture
-amplifier run --bundle design-loop 'Judge fixtures/slop.html and show me a better version'
-```
-
-The judge accepts `kind: html`, `kind: url`, or `kind: image`. Pass a file path, a URL, or raw HTML in the prompt.
+Two honest guarantees: the "after" picture is always a real render of the improved
+HTML (never an AI-generated dream), and the judge always returns a verdict rather
+than fabricating one.
 
 ## Develop
 
-See **[docs/DEV_SETUP.md](docs/DEV_SETUP.md)** for the full environment guide. Quick summary:
+See **[docs/DEV_SETUP.md](docs/DEV_SETUP.md)** for the full environment guide.
 
 ```bash
-# 1 — create the repo-root virtualenv
-uv venv
-source .venv/bin/activate
-
-# 2 — install runtime and test dependencies
+uv venv && source .venv/bin/activate
 uv pip install amplifier-core pytest pytest-asyncio playwright
-
-# 3 — install Chromium (required by tool-render)
 python -m playwright install chromium
-
-# 4 — install the three tool modules editable
-uv pip install -e ./modules/tool-render \
-               -e ./modules/tool-render-report \
-               -e ./modules/tool-target-state
-
-# 5 — run the deterministic suite (unit tests pass; integration skipped)
-python -m pytest modules tests -v
-
-# 6 — run manual integration tests (requires a configured provider API key)
-RUN_MANUAL=1 python -m pytest tests/integration -m manual -v -s
+python -m pytest modules tests -v          # deterministic suite
+RUN_MANUAL=1 python -m pytest tests/integration -m manual -v -s   # needs a provider key
 ```
 
-The integration tests are gated behind `RUN_MANUAL=1` so `pytest` never runs them in CI.
+Integration tests are gated behind `RUN_MANUAL=1` so they never run in CI.
 
-## Scope (MVP)
+## Roadmap
 
-**Implemented**: judge-on-demand — one delegate call, one HTML report, one VERDICT.
+Today this ships the simplest useful shape — **judge on demand**. Natural next steps,
+all reusing the same tools unchanged:
 
-**Deferred (future shapes)**:
-- `tool:post` hook that auto-judges every file write
-- Recipe-based convergence loop (judge → revise → re-judge until score threshold)
-- Attractor DOT pipeline (visualize design quality over iterations)
-- Deterministic slop detector integration (44-rule detector as a pre-filter)
-- Image-generation dream target state (generate an aspirational image, not just a render of improved HTML)
-- Auto-retry on low scores within a single session
-
-**Eventual remote**: [github.com/michaeljabbour/amplifier-bundle-design-loop](https://github.com/michaeljabbour/amplifier-bundle-design-loop)
+- A `tool:post` hook that auto-judges every UI file as it's written.
+- A convergence loop: judge → revise → re-judge until the score clears a bar.
+- A deterministic slop detector as a fast pre-filter before the model scores.
