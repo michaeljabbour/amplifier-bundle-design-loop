@@ -1,0 +1,219 @@
+# =============================================================================
+# design-pass.yaml  —  ONE iteration body of the governed design loop (tier B)
+# =============================================================================
+# Firewall chain (HARNESS_DESIGN.md §1):
+#   Planner (reads ledger) -> Maker (rubric-blind) -> Lints (deterministic gate)
+#   -> [judge skipped on hard-fail] -> Critic (blind, 8 scores) -> Controller.evaluate
+#   -> Ledger.append. The maker never touches a number; the critic never sees the
+#   maker's reasoning. Isolation is enforced by PROMPT MINIMALISM (each agent step
+#   is a fresh sub-session seeing only the prompt we hand it) plus each agent
+#   bundle's own least-privilege tools/rubric.
+#
+# DETERMINISM CONTRACT: every control-path decision (lints hard-gate, MACA
+# evaluate) is computed by a tool-* invoked from a `type: bash` step via
+# `amplifier tool invoke ... --output json`. Those steps sample ZERO model tokens.
+# Only planner/maker/critic are LLM agents (they are SUPPOSED to think).
+#
+# HONEST STOPPING: a lint hard-fail seals the pass as `lint_reject` with
+# scores=null (never a fabricated zero) and NO judge call is spent.
+#
+# Structured data flows between steps as FILES under {{pass_dir}} (not as templated
+# context dicts) because recipe templating renders dicts as Python repr, not JSON.
+# All Python transforms live in a materialised `dlx.py` helper (one base64 blob)
+# so the YAML bash steps stay one-liners. See the report's "schema limitations".
+# =============================================================================
+#
+# CHANGELOG
+# ---------
+# v0.1.0 (2026-06-29):
+#   - NEW: inner-pass body for the greedy single-candidate governed loop.
+#     Deterministic control path via bash -> `amplifier tool invoke` (zero tokens);
+#     lint hard-fail short-circuits the judge (scores stay null — honest stopping);
+#     agent isolation via prompt minimalism (no per-step context_depth knob exists).
+# =============================================================================
+
+name: "design-pass"
+description: "One governed pass: planner -> maker -> lints(gate) -> critic -> MACA evaluate -> ledger. Deterministic control path; honest lint-reject short-circuit."
+version: "0.1.0"
+author: "design-loop harness"
+tags: ["design-loop", "governed-pass", "tier-b"]
+
+context:
+  run_id: ""                 # this run's id (parent supplies)
+  task_class: "landing_page" # ledger partition key
+  signature: "unsigned"      # join key for dead-fix retrieval
+  rubric_version: "unknown"  # = design-critic bundle SHA (stamped on every record)
+  working_head_path: ""      # ABSOLUTE path to the HTML the maker edits from (= current best)
+  best_scores_path: ""       # file holding the 8-dim best scores JSON, or literal null
+  pass_dir: ""               # ABSOLUTE scratch dir for THIS pass (files are the data contract)
+  bundle_ref: ""             # passed to nested `amplifier tool invoke --bundle` (empty = auto-detect)
+  tau: "0"                   # MACA regression tolerance
+
+steps:
+  # 1. PLANNER INPUTS — materialise the helper + pull ledger facts (deterministic)
+  - id: read-ledger
+    type: bash
+    command: |
+      set -uo pipefail
+      W="{{pass_dir}}"; mkdir -p "$W"
+      B='{{bundle_ref}}'
+      echo 'IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiJkZXNpZ24tbG9vcCB0cmFuc2Zvcm1zIOKAlCBwdXJlLCBkZXRlcm1pbmlzdGljIGhlbHBlcnMgZm9yIHRoZSByZWNpcGUgYmFzaCBzdGVwcy4KCkNlbnRyYWxpc2VzIGV2ZXJ5IG11bHRpLWxpbmUgUHl0aG9uIHRyYW5zZm9ybSB0aGUgZGVzaWduLXBhc3MgLyBkZXNpZ24tY29udmVyZ2UKcmVjaXBlcyBuZWVkLCBzbyB0aGUgcmVjaXBlIFlBTUwgYmFzaCBzdGVwcyBzdGF5IG9uZS1saW5lcnMgKG5vIGVtYmVkZGVkCm11bHRpLWxpbmUgUHl0aG9uLCB3aGljaCB3b3VsZCBicmVhayBZQU1MIGJsb2NrLXNjYWxhciBpbmRlbnRhdGlvbikuCgpBbGwgY29tbWFuZHMgcmVhZC93cml0ZSBKU09OIGZpbGVzIHVuZGVyIGEgcnVuL3Bhc3Mgd29yayBkaXIgYFdgIGFuZCBwcmludCBhCnNtYWxsIEpTT04gb2JqZWN0IHRvIHN0ZG91dCBmb3IgdGhlIHJlY2lwZSB0byBjYXB0dXJlIHZpYSBwYXJzZV9qc29uLgoKVGhpcyBmaWxlIGlzIHRoZSByZWFkYWJsZSBzb3VyY2Ugb2YgdHJ1dGg7IHRoZSByZWNpcGVzIGFsc28gZW1iZWQgaXQgKGJhc2U2NCkKYW5kIG1hdGVyaWFsaXNlIGl0IGF0IHJ1bnRpbWUgc28gdGhleSByZW1haW4gc2VsZi1jb250YWluZWQgYW5kIHBvcnRhYmxlLgoiIiIKZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IGFzdAppbXBvcnQganNvbgppbXBvcnQgb3MKaW1wb3J0IHJlCmltcG9ydCBzaHV0aWwKaW1wb3J0IHN5cwoKRElNUyA9IFsKICAgICJjbGFyaXR5IiwgImVsZWdhbmNlIiwgInJlc3RyYWludCIsICJlbXBvd2VybWVudCIsCiAgICAiYWdlbmN5IiwgImVhc2UiLCAiY2hhcmFjdGVyIiwgInBvaW50IiwKXQoKCmRlZiBfbG9hZChwYXRoLCBkZWZhdWx0PU5vbmUpOgogICAgdHJ5OgogICAgICAgIHdpdGggb3BlbihwYXRoLCBlbmNvZGluZz0idXRmLTgiKSBhcyBmOgogICAgICAgICAgICByZXR1cm4ganNvbi5sb2FkKGYpCiAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgIHJldHVybiBkZWZhdWx0CgoKZGVmIF9sZWRnZXJfbGVuKFcpOgogICAgcmV0dXJuIGxlbihfbG9hZChXICsgIi9sZWRnZXIuanNvbiIsIFtdKSBvciBbXSkKCgpkZWYgZXh0cmFjdChyYXdfZmlsZSk6CiAgICAiIiJQdWxsIHRoZSBjbGVhbiB0b29sLXJlc3VsdCBKU09OIG91dCBvZiBgYW1wbGlmaWVyIHRvb2wgaW52b2tlIC0tb3V0cHV0IGpzb25gLgoKICAgIFRoYXQgQ0xJIHByaW50cyBsb2cgbGluZXMgdGhlbiBhIHByZXR0eSBgeyJzdGF0dXMiLCJ0b29sIiwicmVzdWx0In1gIGJsb2NrCiAgICB3aG9zZSBgcmVzdWx0YCBpcyBhIHN0cihkaWN0KSBQeXRob24gcmVwciAoc2luZ2xlIHF1b3RlcyksIG5vdCBKU09OLgogICAgIiIiCiAgICB0cnk6CiAgICAgICAgcmF3ID0gb3BlbihyYXdfZmlsZSwgZW5jb2Rpbmc9InV0Zi04IikucmVhZCgpCiAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgIHByaW50KCJudWxsIik7IHJldHVybgogICAgbSA9IHJlLnNlYXJjaChyJ1x7XHMqInN0YXR1cyIuKlx9XHMqXFonLCByYXcsIHJlLlMpCiAgICBpZiBub3QgbToKICAgICAgICBwcmludCgibnVsbCIpOyByZXR1cm4KICAgIHRyeToKICAgICAgICBvYmogPSBqc29uLmxvYWRzKG0uZ3JvdXAoMCkpCiAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgIHByaW50KCJudWxsIik7IHJldHVybgogICAgcmVzID0gb2JqLmdldCgicmVzdWx0IikKICAgIGlmIGlzaW5zdGFuY2UocmVzLCBzdHIpOgogICAgICAgIHRyeToKICAgICAgICAgICAgcmVzID0gYXN0LmxpdGVyYWxfZXZhbChyZXMpCiAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbjoKICAgICAgICAgICAgcGFzcwogICAgcHJpbnQoanNvbi5kdW1wcyhyZXMpKQoKCmRlZiBsaW50ZmxhZ3MobGludHNfZmlsZSk6CiAgICAiIiJGYWlsLWNsb3NlZCBsaW50IHN1bW1hcnk6IHVucmVhY2hhYmxlIGxpbnRzID09IGhhcmRfZmFpbC4iIiIKICAgIGQgPSBfbG9hZChsaW50c19maWxlKQogICAgaWYgbm90IGlzaW5zdGFuY2UoZCwgZGljdCk6CiAgICAgICAgcHJpbnQoanNvbi5kdW1wcyh7ImhhcmRfZmFpbCI6ICJ0cnVlIiwgInJlYXNvbnMiOiBbImxpbnRfdW5hdmFpbGFibGUiXX0pKTsgcmV0dXJuCiAgICBoZiA9ICJ0cnVlIiBpZiBkLmdldCgiaGFyZF9mYWlsIikgZWxzZSAiZmFsc2UiCiAgICBwcmludChqc29uLmR1bXBzKHsiaGFyZF9mYWlsIjogaGYsICJyZWFzb25zIjogZC5nZXQoImhhcmRfZmFpbF9yZWFzb25zIiwgW10pfSkpCgoKZGVmIGJhc2VyZWMoVywgcnVuLCB0Yywgc2lnLCBydik6CiAgICAiIiJQYXNzLTAgYmFzZWxpbmUgbGVkZ2VyIHJlY29yZCAodGhlIHNlZWQgYmVzdCkuIFJlYWwgY3JpdGljIHNjb3Jlcy4iIiIKICAgIHNjb3JlcyA9IF9sb2FkKFcgKyAiL2Jlc3Rfc2NvcmVzLmpzb24iKQogICAgbGludHMgPSBfbG9hZChXICsgIi9wYXNzMC9saW50cy5qc29uIiwge30pIG9yIHt9CiAgICByZWMgPSB7CiAgICAgICAgInJ1bl9pZCI6IHJ1biwgInRhc2tfY2xhc3MiOiB0YywgInBhc3MiOiAwLCAic2lnbmF0dXJlIjogc2lnLAogICAgICAgICJydWJyaWNfdmVyc2lvbiI6IHJ2LCAib3V0Y29tZSI6ICJhY2NlcHRlZCIsICJzY29yZXMiOiBzY29yZXMsCiAgICAgICAgImZpeF9iYXRjaCI6IFtdLCAibGludF9yZXN1bHRzIjogbGludHMsCiAgICAgICAgImFydGlmYWN0X3JlZiI6IFcgKyAiL2Jlc3QuaHRtbCIsICJkZWNpc2lvbiI6ICJORVdfQkVTVCIsCiAgICB9CiAgICBwcmludChqc29uLmR1bXBzKHJlYykpCgoKZGVmIGxpbnRyZWMoVywgcnVuLCB0Yywgc2lnLCBydik6CiAgICAiIiJMaW50LXJlamVjdCByZWNvcmQ6IHNjb3JlcyBzdGF5IG51bGwgKGhvbmVzdCBzdG9wcGluZyksIG5vIGp1ZGdlIHNwZW50LiIiIgogICAgbGludHMgPSBfbG9hZChXICsgIi9saW50cy5qc29uIiwge30pIG9yIHt9CiAgICBmYiA9IF9sb2FkKFcgKyAiL2ZpeF9iYXRjaC5qc29uIiwgW10pIG9yIFtdCiAgICByZWFzb25zID0gbGludHMuZ2V0KCJoYXJkX2ZhaWxfcmVhc29ucyIpIG9yIFsiaGFyZF9mYWlsIl0KICAgIHJlYyA9IHsKICAgICAgICAicnVuX2lkIjogcnVuLCAidGFza19jbGFzcyI6IHRjLCAicGFzcyI6IF9sZWRnZXJfbGVuKFcpLCAic2lnbmF0dXJlIjogc2lnLAogICAgICAgICJydWJyaWNfdmVyc2lvbiI6IHJ2LCAib3V0Y29tZSI6ICJsaW50X3JlamVjdCIsICJzY29yZXMiOiBOb25lLAogICAgICAgICJyZWplY3RfcmVhc29uIjogImxpbnQ6IiArICIsIi5qb2luKHJlYXNvbnMpLAogICAgICAgICJmaXhfYmF0Y2giOiBmYiwgImxpbnRfcmVzdWx0cyI6IGxpbnRzLAogICAgfQogICAgcHJpbnQoanNvbi5kdW1wcyhyZWMpKQoKCmRlZiBwYXNzcmVjKFcsIHJ1biwgdGMsIHNpZywgcnYsIG91dGNvbWUsIHJlYXNvbiwgZGVjKToKICAgICIiIlNjb3JlZCBsZWRnZXIgcmVjb3JkIGZyb20gYSBjb21wbGV0ZWQganVkZ2UgcGFzcy4iIiIKICAgIHNjb3JlcyA9IF9sb2FkKFcgKyAiL3Njb3Jlcy5qc29uIikKICAgIGxpbnRzID0gX2xvYWQoVyArICIvbGludHMuanNvbiIsIHt9KSBvciB7fQogICAgZmIgPSBfbG9hZChXICsgIi9maXhfYmF0Y2guanNvbiIsIFtdKSBvciBbXQogICAgcmVjID0gewogICAgICAgICJydW5faWQiOiBydW4sICJ0YXNrX2NsYXNzIjogdGMsICJwYXNzIjogX2xlZGdlcl9sZW4oVyksICJzaWduYXR1cmUiOiBzaWcsCiAgICAgICAgInJ1YnJpY192ZXJzaW9uIjogcnYsICJvdXRjb21lIjogb3V0Y29tZSwgInNjb3JlcyI6IHNjb3JlcywKICAgICAgICAiZml4X2JhdGNoIjogZmIsICJsaW50X3Jlc3VsdHMiOiBsaW50cywgImRlY2lzaW9uIjogZGVjLAogICAgfQogICAgaWYgb3V0Y29tZSAhPSAiYWNjZXB0ZWQiOgogICAgICAgIHJlY1sicmVqZWN0X3JlYXNvbiJdID0gcmVhc29uIG9yIG91dGNvbWUKICAgIHByaW50KGpzb24uZHVtcHMocmVjKSkKCgpkZWYgcmVzdWx0KFcsIGRlYywgYnJlZik6CiAgICAiIiJkZXNpZ24tcGFzcyByZXR1cm4gY29udHJhY3Q6IHtzY29yZXMsIGRlY2lzaW9uLCBiZXN0X3NvX2Zhcl9yZWYsIGNhbmRpZGF0ZV9odG1sX3BhdGh9LiIiIgogICAgc2NvcmVzID0gX2xvYWQoVyArICIvc2NvcmVzLmpzb24iKQogICAgcHJpbnQoanNvbi5kdW1wcyh7CiAgICAgICAgInNjb3JlcyI6IHNjb3JlcywgImRlY2lzaW9uIjogZGVjLAogICAgICAgICJiZXN0X3NvX2Zhcl9yZWYiOiBicmVmLCAiY2FuZGlkYXRlX2h0bWxfcGF0aCI6IFcgKyAiL2NhbmRpZGF0ZS5odG1sIiwKICAgIH0pKQoKCmRlZiBsaW50cmVzdWx0KFcpOgogICAgIiIiZGVzaWduLXBhc3MgcmV0dXJuIGNvbnRyYWN0IGZvciB0aGUgbGludC1yZWplY3QgYnJhbmNoIChzY29yZXMgbnVsbCkuIiIiCiAgICBwcmludChqc29uLmR1bXBzKHsKICAgICAgICAic2NvcmVzIjogTm9uZSwgImRlY2lzaW9uIjogIklOVkFMSUQiLAogICAgICAgICJiZXN0X3NvX2Zhcl9yZWYiOiBOb25lLCAiY2FuZGlkYXRlX2h0bWxfcGF0aCI6IFcgKyAiL2NhbmRpZGF0ZS5odG1sIiwKICAgIH0pKQoKCmRlZiBnYXRlcHJlcChXLCBwcmV2X2FjdGlvbik6CiAgICAiIiJSZWZyZXNoIGJlc3Qtc28tZmFyIChhIFFVRVJZKSArIGNvbXB1dGUgdGhlIHBsYXRlYXUgc2VyaWVzIGZvciB0aGUgZ2F0ZS4KCiAgICAtIGJlc3RfcmVjb3JkLmpzb24gLT4gYmVzdF9zY29yZXMuanNvbiBhbmQgYmVzdC5odG1sIChyb2xsYmFjay1mb3ItZnJlZSkuCiAgICAtIGFsbF9yZWNvcmRzLmpzb24gLT4gaW1wcm92ZW1lbnRzLmpzb24gKHdvcnN0LWRpbSBnYWluIHBlciBwYXNzOyAwIG9uCiAgICAgIG5vbi1pbXByb3ZpbmcgLyBsaW50LXJlamVjdCBwYXNzZXMpLgogICAgLSBlbWl0cyB0YXJnZXRfcmV0cmllZCArIGxhc3RfZGVjaXNpb24gZm9yIHRoZSBjb250cm9sbGVyIGdhdGUuCiAgICAiIiIKICAgIGJlc3QgPSBfbG9hZChXICsgIi9iZXN0X3JlY29yZC5qc29uIikKICAgIGlmIGlzaW5zdGFuY2UoYmVzdCwgZGljdCkgYW5kIGlzaW5zdGFuY2UoYmVzdC5nZXQoInNjb3JlcyIpLCBkaWN0KToKICAgICAgICBqc29uLmR1bXAoYmVzdFsic2NvcmVzIl0sIG9wZW4oVyArICIvYmVzdF9zY29yZXMuanNvbiIsICJ3IiwgZW5jb2Rpbmc9InV0Zi04IikpCiAgICAgICAgcmVmID0gYmVzdC5nZXQoImFydGlmYWN0X3JlZiIpCiAgICAgICAgaWYgcmVmIGFuZCByZWYgIT0gVyArICIvYmVzdC5odG1sIiBhbmQgb3MucGF0aC5leGlzdHMocmVmKToKICAgICAgICAgICAgdHJ5OgogICAgICAgICAgICAgICAgc2h1dGlsLmNvcHlmaWxlKHJlZiwgVyArICIvYmVzdC5odG1sIikKICAgICAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbjoKICAgICAgICAgICAgICAgIHBhc3MKICAgIHJlY3MgPSBzb3J0ZWQoX2xvYWQoVyArICIvYWxsX3JlY29yZHMuanNvbiIsIFtdKSBvciBbXSwga2V5PWxhbWJkYSByOiByLmdldCgiZW50cnlfaWQiLCAwKSkKICAgIGltcHJvdmVtZW50cyA9IFtdCiAgICBwcmV2X3dvcnN0ID0gTm9uZQogICAgZm9yIHIgaW4gcmVjczoKICAgICAgICBzID0gci5nZXQoInNjb3JlcyIpCiAgICAgICAgaWYgaXNpbnN0YW5jZShzLCBkaWN0KToKICAgICAgICAgICAgd29yc3QgPSBtaW4ocy5nZXQoZCwgMCkgZm9yIGQgaW4gRElNUykKICAgICAgICAgICAgaW1wcm92ZW1lbnRzLmFwcGVuZCgwLjAgaWYgcHJldl93b3JzdCBpcyBOb25lIGVsc2UgZmxvYXQobWF4KDAsIHdvcnN0IC0gcHJldl93b3JzdCkpKQogICAgICAgICAgICBwcmV2X3dvcnN0ID0gd29yc3QgaWYgcHJldl93b3JzdCBpcyBOb25lIGVsc2UgbWF4KHByZXZfd29yc3QsIHdvcnN0KQogICAgICAgIGVsc2U6CiAgICAgICAgICAgIGltcHJvdmVtZW50cy5hcHBlbmQoMC4wKQogICAganNvbi5kdW1wKGltcHJvdmVtZW50cywgb3BlbihXICsgIi9pbXByb3ZlbWVudHMuanNvbiIsICJ3IiwgZW5jb2Rpbmc9InV0Zi04IikpCiAgICByZXMgPSBfbG9hZChXICsgIi9wYXNzLWxpdmUvcmVzdWx0Lmpzb24iLCB7fSkgb3Ige30KICAgIHByaW50KGpzb24uZHVtcHMoewogICAgICAgICJ0YXJnZXRfcmV0cmllZCI6ICJ0cnVlIiBpZiBwcmV2X2FjdGlvbiA9PSAiUk9MTEJBQ0siIGVsc2UgImZhbHNlIiwKICAgICAgICAibGFzdF9kZWNpc2lvbiI6IHJlcy5nZXQoImRlY2lzaW9uIiwgIk5PX0dBSU4iKSwKICAgIH0pKQoKCmRlZiBmaWVsZChwYXRoLCBrZXksIGRlZmF1bHQ9IiIpOgogICAgIiIiUHJpbnQge2tleTogdmFsdWV9IEpTT04gZm9yIG9uZSBmaWVsZCBvZiBhIEpTT04gZmlsZSAoZm9yIHBhcnNlX2pzb24gY2FwdHVyZSkuIiIiCiAgICBwcmludChqc29uLmR1bXBzKHtrZXk6IChfbG9hZChwYXRoLCB7fSkgb3Ige30pLmdldChrZXksIGRlZmF1bHQpfSkpCgoKZGVmIGdldChwYXRoLCBrZXksIGRlZmF1bHQ9IiIpOgogICAgIiIiUHJpbnQgdGhlIFJBVyBzY2FsYXIgdmFsdWUgb2Ygb25lIGZpZWxkIChmb3IgYmFzaCAkKC4uLikgY2FwdHVyZSkuIiIiCiAgICB2ID0gKF9sb2FkKHBhdGgsIHt9KSBvciB7fSkuZ2V0KGtleSwgZGVmYXVsdCkKICAgIHByaW50KHYgaWYgaXNpbnN0YW5jZSh2LCBzdHIpIGVsc2UganNvbi5kdW1wcyh2KSkKCgpkZWYgZ2F0ZW91dChXLCBicik6CiAgICAiIiJOb3JtYWxpc2UgdGhlIGNvbnRyb2xsZXIgZ2F0ZSByZXN1bHQ7IGZhaWwtY2xvc2VkIGFjdGlvbiA9IEVTQ0FMQVRFLiIiIgogICAgZyA9IF9sb2FkKFcgKyAiL2dhdGUuanNvbiIsIHt9KSBvciB7fQogICAgcHJpbnQoanNvbi5kdW1wcyh7CiAgICAgICAgImFjdGlvbiI6IGcuZ2V0KCJhY3Rpb24iLCAiRVNDQUxBVEUiKSwKICAgICAgICAicmVhc29uIjogZy5nZXQoInJlYXNvbiIsICJnYXRlX3VuYXZhaWxhYmxlIiksCiAgICAgICAgImJ1ZGdldF9yZW1haW5pbmciOiBpbnQoYnIpLAogICAgfSkpCgoKZGVmIHZlcmRpY3QoVyk6CiAgICAiIiJWZXJkaWN0IG9iamVjdCBmb3IgcmVuZGVyX3JlcG9ydCAoc2NvcmVzICsgdG90YWwpLiIiIgogICAgYmVzdCA9IF9sb2FkKFcgKyAiL2Jlc3RfcmVjb3JkLmpzb24iKQogICAgc2NvcmVzID0gYmVzdC5nZXQoInNjb3JlcyIpIGlmIGlzaW5zdGFuY2UoYmVzdCwgZGljdCkgZWxzZSBOb25lCiAgICBwcmludChqc29uLmR1bXBzKHsic2NvcmVzIjogc2NvcmVzIG9yIHt9LCAidG90YWwiOiBzdW0oKHNjb3JlcyBvciB7fSkudmFsdWVzKCkpLCAiZml4ZXMiOiBbXX0pKQoKCmRlZiBzdW1tYXJ5KFcsIGFjdGlvbik6CiAgICAiIiJGaW5hbCBydW4gc3VtbWFyeToge3JlcG9ydF9wYXRoLCBiZXN0X3Njb3JlcywgcGFzc2VzLCBmaW5hbF9hY3Rpb24sIGVzY2FsYXRpb259LiIiIgogICAgYmVzdCA9IF9sb2FkKFcgKyAiL2Jlc3RfcmVjb3JkLmpzb24iKQogICAgYmVzdF9zY29yZXMgPSBiZXN0LmdldCgic2NvcmVzIikgaWYgaXNpbnN0YW5jZShiZXN0LCBkaWN0KSBlbHNlIE5vbmUKICAgIHJlcCA9IF9sb2FkKFcgKyAiL3JlcG9ydC5qc29uIiwge30pIG9yIHt9CiAgICB0cnk6CiAgICAgICAgcGFzc2VzID0gaW50KG9wZW4oVyArICIvcGFzc2VzLnR4dCIsIGVuY29kaW5nPSJ1dGYtOCIpLnJlYWQoKS5zdHJpcCgpIG9yICIwIikKICAgIGV4Y2VwdCBFeGNlcHRpb246CiAgICAgICAgcGFzc2VzID0gMAogICAgZXNjYWxhdGlvbiA9IE5vbmUKICAgIGlmIGFjdGlvbiA9PSAiRVNDQUxBVEUiOgogICAgICAgIGcgPSBfbG9hZChXICsgIi9nYXRlLmpzb24iLCB7fSkgb3Ige30KICAgICAgICBlc2NhbGF0aW9uID0geyJyZWFzb24iOiBnLmdldCgicmVhc29uIiwgInVua25vd24iKX0KICAgIHByaW50KGpzb24uZHVtcHMoewogICAgICAgICJyZXBvcnRfcGF0aCI6IHJlcC5nZXQoInJlcG9ydF9odG1sX3BhdGgiLCBXICsgIi9yZXBvcnQuaHRtbCIpLAogICAgICAgICJiZXN0X3Njb3JlcyI6IGJlc3Rfc2NvcmVzLCAicGFzc2VzIjogcGFzc2VzLAogICAgICAgICJmaW5hbF9hY3Rpb24iOiBhY3Rpb24sICJlc2NhbGF0aW9uIjogZXNjYWxhdGlvbiwKICAgIH0pKQoKCl9DT01NQU5EUyA9IHsKICAgICJleHRyYWN0IjogZXh0cmFjdCwgImxpbnRmbGFncyI6IGxpbnRmbGFncywgImJhc2VyZWMiOiBiYXNlcmVjLAogICAgImxpbnRyZWMiOiBsaW50cmVjLCAicGFzc3JlYyI6IHBhc3NyZWMsICJyZXN1bHQiOiByZXN1bHQsCiAgICAibGludHJlc3VsdCI6IGxpbnRyZXN1bHQsICJnYXRlcHJlcCI6IGdhdGVwcmVwLCAidmVyZGljdCI6IHZlcmRpY3QsCiAgICAic3VtbWFyeSI6IHN1bW1hcnksCn0KCgpkZWYgbWFpbigpOgogICAgaWYgbGVuKHN5cy5hcmd2KSA8IDIgb3Igc3lzLmFyZ3ZbMV0gbm90IGluIF9DT01NQU5EUzoKICAgICAgICBwcmludCgibnVsbCIpOyByZXR1cm4KICAgIF9DT01NQU5EU1tzeXMuYXJndlsxXV0oKnN5cy5hcmd2WzI6XSkKCgppZiBfX25hbWVfXyA9PSAiX19tYWluX18iOgogICAgbWFpbigpCg==' | base64 -d > "$W/dlx.py"
+      amplifier tool invoke design_ledger op=query task_class="{{task_class}}" --output json ${B:+--bundle "$B"} > "$W/_q.txt" 2>/dev/null || true
+      python3 "$W/dlx.py" extract "$W/_q.txt" > "$W/ledger.json"
+      amplifier tool invoke design_ledger op=dead_fixes task_class="{{task_class}}" signature="{{signature}}" --output json ${B:+--bundle "$B"} > "$W/_d.txt" 2>/dev/null || true
+      python3 "$W/dlx.py" extract "$W/_d.txt" > "$W/dead_fixes.json"
+      echo '{"ready":"true"}'
+    output: ledger_ready
+    parse_json: true
+
+  # 2. PLANNER (LLM) — reads ledger -> highest-leverage, lowest-regression fixes.
+  #    SEES: ledger, dead-fixes, scorecard. MAKES nothing; SCORES nothing.
+  - id: planner
+    type: agent
+    agent: "design-loop:design-planner"
+    prompt: |
+      You are the PLANNER and the anti-collusion firewall. You make no HTML and you
+      score nothing. Select the next fix-batch only.
+
+      Read these files:
+        - Recent passes (ledger):        {{pass_dir}}/ledger.json
+        - Dead strategies (NEVER reuse): {{pass_dir}}/dead_fixes.json
+        - Current best scorecard (8 dims, or null): {{best_scores_path}}
+
+      Attack the WORST-scoring dimension. Prefer fixes that lift the worst dim without
+      risking regression elsewhere. Skip any strategy_tag listed in dead_fixes.json.
+
+      Emit a JSON array; each element:
+        {"fix_id": "...", "target_dims": ["..."], "directive": "...", "strategy_tag": "..."}
+      Write the array to {{pass_dir}}/fix_batch.json AND return it as your final message.
+    output: fix_batch
+    parse_json: true
+
+  # 3. MAKER (LLM, rubric-blind) — applies directives -> real HTML.
+  #    SEES: working_head HTML + fix_batch. NEVER SEES: rubric, scores, dim defs.
+  - id: maker
+    type: agent
+    agent: "design-loop:design-maker"
+    prompt: |
+      You are the MAKER. You optimise the directives you are given, never a score.
+      You are NOT shown any scoring rubric, any numbers, or any quality dimensions —
+      do not ask for them and do not invent them.
+
+      Read the current design HTML at: {{working_head_path}}
+      Apply ONLY the directives in:    {{pass_dir}}/fix_batch.json
+
+      Produce a COMPLETE, SELF-CONTAINED, OFFLINE HTML document (inline all CSS; make
+      NO external network requests — an outbound request is a hard lint failure).
+      Write the finished document to: {{pass_dir}}/candidate.html and return that path.
+    output: maker_done
+
+  # 4. LINTS (deterministic gate, BEFORE the judge). Fail-closed if unreachable.
+  - id: lints
+    type: bash
+    command: |
+      set -uo pipefail
+      W="{{pass_dir}}"
+      B='{{bundle_ref}}'
+      amplifier tool invoke design_lints html_path="$W/candidate.html" --output json ${B:+--bundle "$B"} > "$W/_l.txt" 2>/dev/null || true
+      python3 "$W/dlx.py" extract "$W/_l.txt" > "$W/lints.json"
+      python3 "$W/dlx.py" lintflags "$W/lints.json"
+    output: lints
+    parse_json: true
+
+  # 5. HARD-FAIL PATH — seal as lint_reject (scores=null), NO judge call.
+  - id: lint-reject
+    type: bash
+    condition: "{{lints.hard_fail}} == 'true'"
+    command: |
+      set -uo pipefail
+      W="{{pass_dir}}"
+      B='{{bundle_ref}}'
+      python3 "$W/dlx.py" lintrec "$W" "{{run_id}}" "{{task_class}}" "{{signature}}" "{{rubric_version}}" > "$W/record.json"
+      amplifier tool invoke design_ledger op=append record="$(cat "$W/record.json")" --output json ${B:+--bundle "$B"} > "$W/_a.txt" 2>/dev/null || true
+      python3 "$W/dlx.py" lintresult "$W" > "$W/result.json"
+      cat "$W/result.json"
+    output: lint_reject_out
+    parse_json: true
+
+  # 6. RENDER (only if lints passed) — stable screenshot at $W/shot.png
+  - id: render
+    type: bash
+    condition: "{{lints.hard_fail}} == 'false'"
+    command: |
+      set -uo pipefail
+      W="{{pass_dir}}"
+      B='{{bundle_ref}}'
+      amplifier tool invoke render source="$W/candidate.html" kind=html out_path="$W/shot.png" --output json ${B:+--bundle "$B"} > "$W/_r.txt" 2>/dev/null || true
+      echo '{"rendered":"true"}'
+    output: render
+    parse_json: true
+
+  # 7. CRITIC (LLM, blind judge) — 8 scores from the RENDER only.
+  #    SEES: screenshot + lint facts. NEVER SEES: HTML, maker rationale, directives, prior scores.
+  - id: critic
+    type: agent
+    condition: "{{lints.hard_fail}} == 'false'"
+    agent: "design-loop:design-critic"
+    prompt: |
+      You are the CRITIC — a blind judge. You have NOT seen the source HTML, the maker's
+      intent, or any planner directive. Judge only what is on screen.
+
+      View ONLY the rendered screenshot: {{pass_dir}}/shot.png
+      Objective lint anchors (context, do not let them override your eyes): {{pass_dir}}/lints.json
+
+      Score these 8 qualities as integers 0-4 against your frozen rubric:
+        clarity, elegance, restraint, empowerment, agency, ease, character, point
+      Write a single JSON object (the 8 quality names as keys, integer values) to
+      {{pass_dir}}/scores.json and return it.
+    output: scores
+    parse_json: true
+
+  # 8. EVALUATE (deterministic MACA) — accept/reject vs best. NO LLM.
+  - id: evaluate
+    type: bash
+    condition: "{{lints.hard_fail}} == 'false'"
+    command: |
+      set -uo pipefail
+      W="{{pass_dir}}"
+      B='{{bundle_ref}}'
+      BS="$(cat "{{best_scores_path}}" 2>/dev/null)"; [ -z "$BS" ] && BS=null
+      amplifier tool invoke design_controller op=evaluate candidate_scores="$(cat "$W/scores.json")" best_scores="$BS" candidate_hard_fail=false tau="{{tau}}" --output json ${B:+--bundle "$B"} > "$W/_e.txt" 2>/dev/null || true
+      python3 "$W/dlx.py" extract "$W/_e.txt" > "$W/decision.json"
+      python3 "$W/dlx.py" field "$W/decision.json" decision NO_GAIN
+    output: evaluate
+    parse_json: true
+
+  # 9. SCORED LEDGER APPEND — map decision -> outcome + reject_reason; persist.
+  #    outcome: accepted | regression_reject | judge_below_bar  (§5)
+  - id: ledger-scored
+    type: bash
+    condition: "{{lints.hard_fail}} == 'false'"
+    command: |
+      set -uo pipefail
+      W="{{pass_dir}}"
+      B='{{bundle_ref}}'
+      DEC="{{evaluate.decision}}"
+      case "$DEC" in
+        NEW_BEST)   OUTCOME=accepted;          REASON="" ;;
+        REGRESSION) OUTCOME=regression_reject; REASON="regression" ;;
+        NO_GAIN)    OUTCOME=judge_below_bar;   REASON="no_gain" ;;
+        *)          OUTCOME=judge_below_bar;   REASON="$DEC" ;;
+      esac
+      python3 "$W/dlx.py" passrec "$W" "{{run_id}}" "{{task_class}}" "{{signature}}" "{{rubric_version}}" "$OUTCOME" "$REASON" "$DEC" > "$W/record.json"
+      amplifier tool invoke design_ledger op=append record="$(cat "$W/record.json")" --output json ${B:+--bundle "$B"} > "$W/_a.txt" 2>/dev/null || true
+      if [ "$OUTCOME" = accepted ]; then BREF="$W/candidate.html"; else BREF="prev_best"; fi
+      python3 "$W/dlx.py" result "$W" "$DEC" "$BREF" > "$W/result.json"
+      cat "$W/result.json"
+    output: ledger_scored_out
+    parse_json: true
+
+  # 10. ASSEMBLE RETURN — {scores, decision, best_so_far_ref, candidate_html_path}
+  #     result.json was written by exactly one of step 5 or step 9.
+  - id: assemble
+    type: bash
+    command: |
+      set -uo pipefail
+      W="{{pass_dir}}"
+      cat "$W/result.json"
+    output: final_output
+    parse_json: true

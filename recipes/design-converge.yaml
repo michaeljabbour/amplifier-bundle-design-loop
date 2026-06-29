@@ -1,0 +1,217 @@
+# =============================================================================
+# design-converge.yaml  —  the OUTER governed loop (greedy, width=1, tier B)
+# =============================================================================
+# Controller state machine (HARNESS_DESIGN.md §2) realised as a STAGED recipe:
+#   INIT     render baseline -> lints -> critic -> ledger(pass 0) -> best_so_far
+#   LOOP     while not {DONE|ESCALATE}:
+#              run design-pass.yaml          (planner->maker->lints->critic->evaluate->ledger)
+#              design_controller op=gate     (DETERMINISTIC stopping rules)
+#              update_context on gate.action (ROLLBACK/PLAN both -> edit-from-best next pass)
+#   FINALIZE render_report on best_so_far -> {report_path, best_scores, passes, escalation?}
+#
+# DETERMINISM: stopping is decided ONLY by `design_controller op=gate` (a tool,
+# invoked from a bash step — ZERO model tokens). Its four rules (bar_met /
+# budget_exhausted / floor_breach / plateau) + regression handling are the core.
+# No LLM ever decides to stop.
+#
+# GREEDY width=1: best-so-far is a LEDGER QUERY (`design_ledger op=best`), never a
+# mutated variable. Each pass edits from the current best HTML, so a rejected
+# candidate "rolls back" for free (the next pass simply re-edits best). The gate's
+# ROLLBACK vs PLAN distinction only drives regression_retry -> regression_stuck
+# escalation, tracked via prev_action / target_retried.
+#
+# HUMAN GATE (HARNESS_DESIGN.md §6/§7): the ONE staged approval gate is UP FRONT —
+# the human authors/ratifies the APS (bar, floors, budget, epsilon, k) once, before
+# any budget is spent. Normal convergence never pages the human again; an ESCALATE
+# halts the loop and surfaces `escalation` in the returned summary (the "page").
+# A *conditional* gate that fires ONLY on ESCALATE is NOT expressible in the recipe
+# schema (stage approval gates are structural + unconditional) — see the report.
+# =============================================================================
+#
+# CHANGELOG
+# ---------
+# v0.1.0 (2026-06-29):
+#   - NEW: staged governed loop. Up-front APS approval gate; deterministic
+#     gate-driven stopping; greedy edit-from-best; honest escalation surfacing.
+# =============================================================================
+
+name: "design-converge"
+description: "Governed single-candidate design loop: human authors APS up front (approval gate), then a deterministic controller drives passes to a bar; escalation halts and is returned."
+version: "0.1.0"
+author: "design-loop harness"
+tags: ["design-loop", "governed-loop", "tier-b", "staged"]
+
+context:
+  # --- the artifact + identity ---
+  source_path: ""            # ABSOLUTE path to the baseline HTML to improve (REQUIRED)
+  task_class: "landing_page" # ledger partition key
+  signature: "unsigned"      # join key
+  run_id: "r-local"          # this run's id
+  rubric_version: "unknown"  # = design-critic bundle SHA
+
+  # --- the APS (Acceptance/Production Spec): authored ONCE by the human ---
+  bar: 24                    # target TOTAL across the 8 dims (DONE when total >= bar AND floors met)
+  floors: 2                  # per-dim minimum (INT = uniform; a per-dim dict is NOT cleanly templatable — see report)
+  budget: 12                 # max passes (gate returns DONE/budget_exhausted at 0)
+  epsilon: 1                 # plateau threshold: worst-dim improvement < epsilon counts as flat
+  k: 3                       # plateau window: ESCALATE if the last k passes were all flat
+  tau: 0                     # MACA regression tolerance
+
+  # --- plumbing (use ABSOLUTE paths; no ~ — recipe templating does not expanduser) ---
+  work_dir: "/tmp/design-loop/r-local"  # run scratch + outputs
+  bundle_ref: ""             # nested `amplifier tool invoke --bundle` (empty = auto-detect)
+
+  # --- loop state (initialised here; mutated by the loop's update_context) ---
+  loop_action: "PLAN"        # gate action; while/break read this
+  prev_action: "NONE"        # previous gate action (drives regression_retry -> regression_stuck)
+
+stages:
+  # ===========================================================================
+  # STAGE 1 — AUTHORIZE APS (the up-front human gate)
+  # ===========================================================================
+  - name: authorize-aps
+    steps:
+      - id: state-aps
+        type: bash
+        command: |
+          set -uo pipefail
+          WD="{{work_dir}}"; mkdir -p "$WD"
+          echo '{"authorized":"pending","bar":"{{bar}}","budget":"{{budget}}"}'
+        output: aps
+        parse_json: true
+    approval:
+      required: true
+      prompt: |
+        AUTHORIZE THE ACCEPTANCE/PRODUCTION SPEC (APS) before any budget is spent.
+
+        This is the only scheduled human checkpoint. After you approve, the loop runs
+        autonomously and will page you again ONLY if it escalates (floor breach,
+        plateau, or a stuck regression).
+
+          task_class : {{task_class}}
+          bar        : {{bar}}     (DONE when total across 8 dims >= bar AND every dim >= floor)
+          floors     : {{floors}}  (per-dim minimum; INT = uniform)
+          budget     : {{budget}}  (max passes)
+          epsilon    : {{epsilon}} (plateau improvement threshold)
+          k          : {{k}}       (plateau window)
+          tau        : {{tau}}     (regression tolerance)
+
+        Approve to spend up to {{budget}} passes converging toward this bar. Deny to abort.
+      timeout: 0
+      default: "deny"
+
+  # ===========================================================================
+  # STAGE 2 — CONVERGE (init -> deterministic loop -> finalize). No human gate.
+  # ===========================================================================
+  - name: converge
+    steps:
+      # ----- INIT: materialise helper + baseline render + lints (pass 0) -----
+      - id: init-observe
+        type: bash
+        command: |
+          set -uo pipefail
+          WD="{{work_dir}}"; SRC="{{source_path}}"; B='{{bundle_ref}}'
+          mkdir -p "$WD/pass0"
+          echo 'IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiJkZXNpZ24tbG9vcCB0cmFuc2Zvcm1zIOKAlCBwdXJlLCBkZXRlcm1pbmlzdGljIGhlbHBlcnMgZm9yIHRoZSByZWNpcGUgYmFzaCBzdGVwcy4KCkNlbnRyYWxpc2VzIGV2ZXJ5IG11bHRpLWxpbmUgUHl0aG9uIHRyYW5zZm9ybSB0aGUgZGVzaWduLXBhc3MgLyBkZXNpZ24tY29udmVyZ2UKcmVjaXBlcyBuZWVkLCBzbyB0aGUgcmVjaXBlIFlBTUwgYmFzaCBzdGVwcyBzdGF5IG9uZS1saW5lcnMgKG5vIGVtYmVkZGVkCm11bHRpLWxpbmUgUHl0aG9uLCB3aGljaCB3b3VsZCBicmVhayBZQU1MIGJsb2NrLXNjYWxhciBpbmRlbnRhdGlvbikuCgpBbGwgY29tbWFuZHMgcmVhZC93cml0ZSBKU09OIGZpbGVzIHVuZGVyIGEgcnVuL3Bhc3Mgd29yayBkaXIgYFdgIGFuZCBwcmludCBhCnNtYWxsIEpTT04gb2JqZWN0IHRvIHN0ZG91dCBmb3IgdGhlIHJlY2lwZSB0byBjYXB0dXJlIHZpYSBwYXJzZV9qc29uLgoKVGhpcyBmaWxlIGlzIHRoZSByZWFkYWJsZSBzb3VyY2Ugb2YgdHJ1dGg7IHRoZSByZWNpcGVzIGFsc28gZW1iZWQgaXQgKGJhc2U2NCkKYW5kIG1hdGVyaWFsaXNlIGl0IGF0IHJ1bnRpbWUgc28gdGhleSByZW1haW4gc2VsZi1jb250YWluZWQgYW5kIHBvcnRhYmxlLgoiIiIKZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IGFzdAppbXBvcnQganNvbgppbXBvcnQgb3MKaW1wb3J0IHJlCmltcG9ydCBzaHV0aWwKaW1wb3J0IHN5cwoKRElNUyA9IFsKICAgICJjbGFyaXR5IiwgImVsZWdhbmNlIiwgInJlc3RyYWludCIsICJlbXBvd2VybWVudCIsCiAgICAiYWdlbmN5IiwgImVhc2UiLCAiY2hhcmFjdGVyIiwgInBvaW50IiwKXQoKCmRlZiBfbG9hZChwYXRoLCBkZWZhdWx0PU5vbmUpOgogICAgdHJ5OgogICAgICAgIHdpdGggb3BlbihwYXRoLCBlbmNvZGluZz0idXRmLTgiKSBhcyBmOgogICAgICAgICAgICByZXR1cm4ganNvbi5sb2FkKGYpCiAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgIHJldHVybiBkZWZhdWx0CgoKZGVmIF9sZWRnZXJfbGVuKFcpOgogICAgcmV0dXJuIGxlbihfbG9hZChXICsgIi9sZWRnZXIuanNvbiIsIFtdKSBvciBbXSkKCgpkZWYgZXh0cmFjdChyYXdfZmlsZSk6CiAgICAiIiJQdWxsIHRoZSBjbGVhbiB0b29sLXJlc3VsdCBKU09OIG91dCBvZiBgYW1wbGlmaWVyIHRvb2wgaW52b2tlIC0tb3V0cHV0IGpzb25gLgoKICAgIFRoYXQgQ0xJIHByaW50cyBsb2cgbGluZXMgdGhlbiBhIHByZXR0eSBgeyJzdGF0dXMiLCJ0b29sIiwicmVzdWx0In1gIGJsb2NrCiAgICB3aG9zZSBgcmVzdWx0YCBpcyBhIHN0cihkaWN0KSBQeXRob24gcmVwciAoc2luZ2xlIHF1b3RlcyksIG5vdCBKU09OLgogICAgIiIiCiAgICB0cnk6CiAgICAgICAgcmF3ID0gb3BlbihyYXdfZmlsZSwgZW5jb2Rpbmc9InV0Zi04IikucmVhZCgpCiAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgIHByaW50KCJudWxsIik7IHJldHVybgogICAgbSA9IHJlLnNlYXJjaChyJ1x7XHMqInN0YXR1cyIuKlx9XHMqXFonLCByYXcsIHJlLlMpCiAgICBpZiBub3QgbToKICAgICAgICBwcmludCgibnVsbCIpOyByZXR1cm4KICAgIHRyeToKICAgICAgICBvYmogPSBqc29uLmxvYWRzKG0uZ3JvdXAoMCkpCiAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgIHByaW50KCJudWxsIik7IHJldHVybgogICAgcmVzID0gb2JqLmdldCgicmVzdWx0IikKICAgIGlmIGlzaW5zdGFuY2UocmVzLCBzdHIpOgogICAgICAgIHRyeToKICAgICAgICAgICAgcmVzID0gYXN0LmxpdGVyYWxfZXZhbChyZXMpCiAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbjoKICAgICAgICAgICAgcGFzcwogICAgcHJpbnQoanNvbi5kdW1wcyhyZXMpKQoKCmRlZiBsaW50ZmxhZ3MobGludHNfZmlsZSk6CiAgICAiIiJGYWlsLWNsb3NlZCBsaW50IHN1bW1hcnk6IHVucmVhY2hhYmxlIGxpbnRzID09IGhhcmRfZmFpbC4iIiIKICAgIGQgPSBfbG9hZChsaW50c19maWxlKQogICAgaWYgbm90IGlzaW5zdGFuY2UoZCwgZGljdCk6CiAgICAgICAgcHJpbnQoanNvbi5kdW1wcyh7ImhhcmRfZmFpbCI6ICJ0cnVlIiwgInJlYXNvbnMiOiBbImxpbnRfdW5hdmFpbGFibGUiXX0pKTsgcmV0dXJuCiAgICBoZiA9ICJ0cnVlIiBpZiBkLmdldCgiaGFyZF9mYWlsIikgZWxzZSAiZmFsc2UiCiAgICBwcmludChqc29uLmR1bXBzKHsiaGFyZF9mYWlsIjogaGYsICJyZWFzb25zIjogZC5nZXQoImhhcmRfZmFpbF9yZWFzb25zIiwgW10pfSkpCgoKZGVmIGJhc2VyZWMoVywgcnVuLCB0Yywgc2lnLCBydik6CiAgICAiIiJQYXNzLTAgYmFzZWxpbmUgbGVkZ2VyIHJlY29yZCAodGhlIHNlZWQgYmVzdCkuIFJlYWwgY3JpdGljIHNjb3Jlcy4iIiIKICAgIHNjb3JlcyA9IF9sb2FkKFcgKyAiL2Jlc3Rfc2NvcmVzLmpzb24iKQogICAgbGludHMgPSBfbG9hZChXICsgIi9wYXNzMC9saW50cy5qc29uIiwge30pIG9yIHt9CiAgICByZWMgPSB7CiAgICAgICAgInJ1bl9pZCI6IHJ1biwgInRhc2tfY2xhc3MiOiB0YywgInBhc3MiOiAwLCAic2lnbmF0dXJlIjogc2lnLAogICAgICAgICJydWJyaWNfdmVyc2lvbiI6IHJ2LCAib3V0Y29tZSI6ICJhY2NlcHRlZCIsICJzY29yZXMiOiBzY29yZXMsCiAgICAgICAgImZpeF9iYXRjaCI6IFtdLCAibGludF9yZXN1bHRzIjogbGludHMsCiAgICAgICAgImFydGlmYWN0X3JlZiI6IFcgKyAiL2Jlc3QuaHRtbCIsICJkZWNpc2lvbiI6ICJORVdfQkVTVCIsCiAgICB9CiAgICBwcmludChqc29uLmR1bXBzKHJlYykpCgoKZGVmIGxpbnRyZWMoVywgcnVuLCB0Yywgc2lnLCBydik6CiAgICAiIiJMaW50LXJlamVjdCByZWNvcmQ6IHNjb3JlcyBzdGF5IG51bGwgKGhvbmVzdCBzdG9wcGluZyksIG5vIGp1ZGdlIHNwZW50LiIiIgogICAgbGludHMgPSBfbG9hZChXICsgIi9saW50cy5qc29uIiwge30pIG9yIHt9CiAgICBmYiA9IF9sb2FkKFcgKyAiL2ZpeF9iYXRjaC5qc29uIiwgW10pIG9yIFtdCiAgICByZWFzb25zID0gbGludHMuZ2V0KCJoYXJkX2ZhaWxfcmVhc29ucyIpIG9yIFsiaGFyZF9mYWlsIl0KICAgIHJlYyA9IHsKICAgICAgICAicnVuX2lkIjogcnVuLCAidGFza19jbGFzcyI6IHRjLCAicGFzcyI6IF9sZWRnZXJfbGVuKFcpLCAic2lnbmF0dXJlIjogc2lnLAogICAgICAgICJydWJyaWNfdmVyc2lvbiI6IHJ2LCAib3V0Y29tZSI6ICJsaW50X3JlamVjdCIsICJzY29yZXMiOiBOb25lLAogICAgICAgICJyZWplY3RfcmVhc29uIjogImxpbnQ6IiArICIsIi5qb2luKHJlYXNvbnMpLAogICAgICAgICJmaXhfYmF0Y2giOiBmYiwgImxpbnRfcmVzdWx0cyI6IGxpbnRzLAogICAgfQogICAgcHJpbnQoanNvbi5kdW1wcyhyZWMpKQoKCmRlZiBwYXNzcmVjKFcsIHJ1biwgdGMsIHNpZywgcnYsIG91dGNvbWUsIHJlYXNvbiwgZGVjKToKICAgICIiIlNjb3JlZCBsZWRnZXIgcmVjb3JkIGZyb20gYSBjb21wbGV0ZWQganVkZ2UgcGFzcy4iIiIKICAgIHNjb3JlcyA9IF9sb2FkKFcgKyAiL3Njb3Jlcy5qc29uIikKICAgIGxpbnRzID0gX2xvYWQoVyArICIvbGludHMuanNvbiIsIHt9KSBvciB7fQogICAgZmIgPSBfbG9hZChXICsgIi9maXhfYmF0Y2guanNvbiIsIFtdKSBvciBbXQogICAgcmVjID0gewogICAgICAgICJydW5faWQiOiBydW4sICJ0YXNrX2NsYXNzIjogdGMsICJwYXNzIjogX2xlZGdlcl9sZW4oVyksICJzaWduYXR1cmUiOiBzaWcsCiAgICAgICAgInJ1YnJpY192ZXJzaW9uIjogcnYsICJvdXRjb21lIjogb3V0Y29tZSwgInNjb3JlcyI6IHNjb3JlcywKICAgICAgICAiZml4X2JhdGNoIjogZmIsICJsaW50X3Jlc3VsdHMiOiBsaW50cywgImRlY2lzaW9uIjogZGVjLAogICAgfQogICAgaWYgb3V0Y29tZSAhPSAiYWNjZXB0ZWQiOgogICAgICAgIHJlY1sicmVqZWN0X3JlYXNvbiJdID0gcmVhc29uIG9yIG91dGNvbWUKICAgIHByaW50KGpzb24uZHVtcHMocmVjKSkKCgpkZWYgcmVzdWx0KFcsIGRlYywgYnJlZik6CiAgICAiIiJkZXNpZ24tcGFzcyByZXR1cm4gY29udHJhY3Q6IHtzY29yZXMsIGRlY2lzaW9uLCBiZXN0X3NvX2Zhcl9yZWYsIGNhbmRpZGF0ZV9odG1sX3BhdGh9LiIiIgogICAgc2NvcmVzID0gX2xvYWQoVyArICIvc2NvcmVzLmpzb24iKQogICAgcHJpbnQoanNvbi5kdW1wcyh7CiAgICAgICAgInNjb3JlcyI6IHNjb3JlcywgImRlY2lzaW9uIjogZGVjLAogICAgICAgICJiZXN0X3NvX2Zhcl9yZWYiOiBicmVmLCAiY2FuZGlkYXRlX2h0bWxfcGF0aCI6IFcgKyAiL2NhbmRpZGF0ZS5odG1sIiwKICAgIH0pKQoKCmRlZiBsaW50cmVzdWx0KFcpOgogICAgIiIiZGVzaWduLXBhc3MgcmV0dXJuIGNvbnRyYWN0IGZvciB0aGUgbGludC1yZWplY3QgYnJhbmNoIChzY29yZXMgbnVsbCkuIiIiCiAgICBwcmludChqc29uLmR1bXBzKHsKICAgICAgICAic2NvcmVzIjogTm9uZSwgImRlY2lzaW9uIjogIklOVkFMSUQiLAogICAgICAgICJiZXN0X3NvX2Zhcl9yZWYiOiBOb25lLCAiY2FuZGlkYXRlX2h0bWxfcGF0aCI6IFcgKyAiL2NhbmRpZGF0ZS5odG1sIiwKICAgIH0pKQoKCmRlZiBnYXRlcHJlcChXLCBwcmV2X2FjdGlvbik6CiAgICAiIiJSZWZyZXNoIGJlc3Qtc28tZmFyIChhIFFVRVJZKSArIGNvbXB1dGUgdGhlIHBsYXRlYXUgc2VyaWVzIGZvciB0aGUgZ2F0ZS4KCiAgICAtIGJlc3RfcmVjb3JkLmpzb24gLT4gYmVzdF9zY29yZXMuanNvbiBhbmQgYmVzdC5odG1sIChyb2xsYmFjay1mb3ItZnJlZSkuCiAgICAtIGFsbF9yZWNvcmRzLmpzb24gLT4gaW1wcm92ZW1lbnRzLmpzb24gKHdvcnN0LWRpbSBnYWluIHBlciBwYXNzOyAwIG9uCiAgICAgIG5vbi1pbXByb3ZpbmcgLyBsaW50LXJlamVjdCBwYXNzZXMpLgogICAgLSBlbWl0cyB0YXJnZXRfcmV0cmllZCArIGxhc3RfZGVjaXNpb24gZm9yIHRoZSBjb250cm9sbGVyIGdhdGUuCiAgICAiIiIKICAgIGJlc3QgPSBfbG9hZChXICsgIi9iZXN0X3JlY29yZC5qc29uIikKICAgIGlmIGlzaW5zdGFuY2UoYmVzdCwgZGljdCkgYW5kIGlzaW5zdGFuY2UoYmVzdC5nZXQoInNjb3JlcyIpLCBkaWN0KToKICAgICAgICBqc29uLmR1bXAoYmVzdFsic2NvcmVzIl0sIG9wZW4oVyArICIvYmVzdF9zY29yZXMuanNvbiIsICJ3IiwgZW5jb2Rpbmc9InV0Zi04IikpCiAgICAgICAgcmVmID0gYmVzdC5nZXQoImFydGlmYWN0X3JlZiIpCiAgICAgICAgaWYgcmVmIGFuZCByZWYgIT0gVyArICIvYmVzdC5odG1sIiBhbmQgb3MucGF0aC5leGlzdHMocmVmKToKICAgICAgICAgICAgdHJ5OgogICAgICAgICAgICAgICAgc2h1dGlsLmNvcHlmaWxlKHJlZiwgVyArICIvYmVzdC5odG1sIikKICAgICAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbjoKICAgICAgICAgICAgICAgIHBhc3MKICAgIHJlY3MgPSBzb3J0ZWQoX2xvYWQoVyArICIvYWxsX3JlY29yZHMuanNvbiIsIFtdKSBvciBbXSwga2V5PWxhbWJkYSByOiByLmdldCgiZW50cnlfaWQiLCAwKSkKICAgIGltcHJvdmVtZW50cyA9IFtdCiAgICBwcmV2X3dvcnN0ID0gTm9uZQogICAgZm9yIHIgaW4gcmVjczoKICAgICAgICBzID0gci5nZXQoInNjb3JlcyIpCiAgICAgICAgaWYgaXNpbnN0YW5jZShzLCBkaWN0KToKICAgICAgICAgICAgd29yc3QgPSBtaW4ocy5nZXQoZCwgMCkgZm9yIGQgaW4gRElNUykKICAgICAgICAgICAgaW1wcm92ZW1lbnRzLmFwcGVuZCgwLjAgaWYgcHJldl93b3JzdCBpcyBOb25lIGVsc2UgZmxvYXQobWF4KDAsIHdvcnN0IC0gcHJldl93b3JzdCkpKQogICAgICAgICAgICBwcmV2X3dvcnN0ID0gd29yc3QgaWYgcHJldl93b3JzdCBpcyBOb25lIGVsc2UgbWF4KHByZXZfd29yc3QsIHdvcnN0KQogICAgICAgIGVsc2U6CiAgICAgICAgICAgIGltcHJvdmVtZW50cy5hcHBlbmQoMC4wKQogICAganNvbi5kdW1wKGltcHJvdmVtZW50cywgb3BlbihXICsgIi9pbXByb3ZlbWVudHMuanNvbiIsICJ3IiwgZW5jb2Rpbmc9InV0Zi04IikpCiAgICByZXMgPSBfbG9hZChXICsgIi9wYXNzLWxpdmUvcmVzdWx0Lmpzb24iLCB7fSkgb3Ige30KICAgIHByaW50KGpzb24uZHVtcHMoewogICAgICAgICJ0YXJnZXRfcmV0cmllZCI6ICJ0cnVlIiBpZiBwcmV2X2FjdGlvbiA9PSAiUk9MTEJBQ0siIGVsc2UgImZhbHNlIiwKICAgICAgICAibGFzdF9kZWNpc2lvbiI6IHJlcy5nZXQoImRlY2lzaW9uIiwgIk5PX0dBSU4iKSwKICAgIH0pKQoKCmRlZiBmaWVsZChwYXRoLCBrZXksIGRlZmF1bHQ9IiIpOgogICAgIiIiUHJpbnQge2tleTogdmFsdWV9IEpTT04gZm9yIG9uZSBmaWVsZCBvZiBhIEpTT04gZmlsZSAoZm9yIHBhcnNlX2pzb24gY2FwdHVyZSkuIiIiCiAgICBwcmludChqc29uLmR1bXBzKHtrZXk6IChfbG9hZChwYXRoLCB7fSkgb3Ige30pLmdldChrZXksIGRlZmF1bHQpfSkpCgoKZGVmIGdldChwYXRoLCBrZXksIGRlZmF1bHQ9IiIpOgogICAgIiIiUHJpbnQgdGhlIFJBVyBzY2FsYXIgdmFsdWUgb2Ygb25lIGZpZWxkIChmb3IgYmFzaCAkKC4uLikgY2FwdHVyZSkuIiIiCiAgICB2ID0gKF9sb2FkKHBhdGgsIHt9KSBvciB7fSkuZ2V0KGtleSwgZGVmYXVsdCkKICAgIHByaW50KHYgaWYgaXNpbnN0YW5jZSh2LCBzdHIpIGVsc2UganNvbi5kdW1wcyh2KSkKCgpkZWYgZ2F0ZW91dChXLCBicik6CiAgICAiIiJOb3JtYWxpc2UgdGhlIGNvbnRyb2xsZXIgZ2F0ZSByZXN1bHQ7IGZhaWwtY2xvc2VkIGFjdGlvbiA9IEVTQ0FMQVRFLiIiIgogICAgZyA9IF9sb2FkKFcgKyAiL2dhdGUuanNvbiIsIHt9KSBvciB7fQogICAgcHJpbnQoanNvbi5kdW1wcyh7CiAgICAgICAgImFjdGlvbiI6IGcuZ2V0KCJhY3Rpb24iLCAiRVNDQUxBVEUiKSwKICAgICAgICAicmVhc29uIjogZy5nZXQoInJlYXNvbiIsICJnYXRlX3VuYXZhaWxhYmxlIiksCiAgICAgICAgImJ1ZGdldF9yZW1haW5pbmciOiBpbnQoYnIpLAogICAgfSkpCgoKZGVmIHZlcmRpY3QoVyk6CiAgICAiIiJWZXJkaWN0IG9iamVjdCBmb3IgcmVuZGVyX3JlcG9ydCAoc2NvcmVzICsgdG90YWwpLiIiIgogICAgYmVzdCA9IF9sb2FkKFcgKyAiL2Jlc3RfcmVjb3JkLmpzb24iKQogICAgc2NvcmVzID0gYmVzdC5nZXQoInNjb3JlcyIpIGlmIGlzaW5zdGFuY2UoYmVzdCwgZGljdCkgZWxzZSBOb25lCiAgICBwcmludChqc29uLmR1bXBzKHsic2NvcmVzIjogc2NvcmVzIG9yIHt9LCAidG90YWwiOiBzdW0oKHNjb3JlcyBvciB7fSkudmFsdWVzKCkpLCAiZml4ZXMiOiBbXX0pKQoKCmRlZiBzdW1tYXJ5KFcsIGFjdGlvbik6CiAgICAiIiJGaW5hbCBydW4gc3VtbWFyeToge3JlcG9ydF9wYXRoLCBiZXN0X3Njb3JlcywgcGFzc2VzLCBmaW5hbF9hY3Rpb24sIGVzY2FsYXRpb259LiIiIgogICAgYmVzdCA9IF9sb2FkKFcgKyAiL2Jlc3RfcmVjb3JkLmpzb24iKQogICAgYmVzdF9zY29yZXMgPSBiZXN0LmdldCgic2NvcmVzIikgaWYgaXNpbnN0YW5jZShiZXN0LCBkaWN0KSBlbHNlIE5vbmUKICAgIHJlcCA9IF9sb2FkKFcgKyAiL3JlcG9ydC5qc29uIiwge30pIG9yIHt9CiAgICB0cnk6CiAgICAgICAgcGFzc2VzID0gaW50KG9wZW4oVyArICIvcGFzc2VzLnR4dCIsIGVuY29kaW5nPSJ1dGYtOCIpLnJlYWQoKS5zdHJpcCgpIG9yICIwIikKICAgIGV4Y2VwdCBFeGNlcHRpb246CiAgICAgICAgcGFzc2VzID0gMAogICAgZXNjYWxhdGlvbiA9IE5vbmUKICAgIGlmIGFjdGlvbiA9PSAiRVNDQUxBVEUiOgogICAgICAgIGcgPSBfbG9hZChXICsgIi9nYXRlLmpzb24iLCB7fSkgb3Ige30KICAgICAgICBlc2NhbGF0aW9uID0geyJyZWFzb24iOiBnLmdldCgicmVhc29uIiwgInVua25vd24iKX0KICAgIHByaW50KGpzb24uZHVtcHMoewogICAgICAgICJyZXBvcnRfcGF0aCI6IHJlcC5nZXQoInJlcG9ydF9odG1sX3BhdGgiLCBXICsgIi9yZXBvcnQuaHRtbCIpLAogICAgICAgICJiZXN0X3Njb3JlcyI6IGJlc3Rfc2NvcmVzLCAicGFzc2VzIjogcGFzc2VzLAogICAgICAgICJmaW5hbF9hY3Rpb24iOiBhY3Rpb24sICJlc2NhbGF0aW9uIjogZXNjYWxhdGlvbiwKICAgIH0pKQoKCl9DT01NQU5EUyA9IHsKICAgICJleHRyYWN0IjogZXh0cmFjdCwgImxpbnRmbGFncyI6IGxpbnRmbGFncywgImJhc2VyZWMiOiBiYXNlcmVjLAogICAgImxpbnRyZWMiOiBsaW50cmVjLCAicGFzc3JlYyI6IHBhc3NyZWMsICJyZXN1bHQiOiByZXN1bHQsCiAgICAibGludHJlc3VsdCI6IGxpbnRyZXN1bHQsICJnYXRlcHJlcCI6IGdhdGVwcmVwLCAidmVyZGljdCI6IHZlcmRpY3QsCiAgICAic3VtbWFyeSI6IHN1bW1hcnksCn0KCgpkZWYgbWFpbigpOgogICAgaWYgbGVuKHN5cy5hcmd2KSA8IDIgb3Igc3lzLmFyZ3ZbMV0gbm90IGluIF9DT01NQU5EUzoKICAgICAgICBwcmludCgibnVsbCIpOyByZXR1cm4KICAgIF9DT01NQU5EU1tzeXMuYXJndlsxXV0oKnN5cy5hcmd2WzI6XSkKCgppZiBfX25hbWVfXyA9PSAiX19tYWluX18iOgogICAgbWFpbigpCg==' | base64 -d > "$WD/dlx.py"
+          cp "$SRC" "$WD/best.html"
+          echo "0" > "$WD/passes.txt"
+          amplifier tool invoke render source="$WD/best.html" kind=html out_path="$WD/pass0/shot.png" --output json ${B:+--bundle "$B"} > "$WD/pass0/_r.txt" 2>/dev/null || true
+          amplifier tool invoke design_lints html_path="$WD/best.html" --output json ${B:+--bundle "$B"} > "$WD/pass0/_l.txt" 2>/dev/null || true
+          python3 "$WD/dlx.py" extract "$WD/pass0/_l.txt" > "$WD/pass0/lints.json"
+          echo '{"ready":"true"}'
+        output: init_observe
+        parse_json: true
+
+      # ----- INIT: blind critic scores the BASELINE (real scores, pass 0) -----
+      - id: init-critic
+        type: agent
+        agent: "design-loop:design-critic"
+        prompt: |
+          You are the CRITIC — a blind judge scoring the BASELINE design (pass 0).
+          You have not seen any source code or intent. Judge only what is on screen.
+
+          View ONLY the screenshot: {{work_dir}}/pass0/shot.png
+          Objective lint anchors: {{work_dir}}/pass0/lints.json
+
+          Score these 8 qualities as integers 0-4 against your frozen rubric:
+            clarity, elegance, restraint, empowerment, agency, ease, character, point
+          Write the JSON object to {{work_dir}}/best_scores.json and return it.
+        output: baseline_scores
+        parse_json: true
+
+      # ----- INIT: seed the ledger with pass 0 as the first ACCEPTED best -----
+      - id: init-ledger
+        type: bash
+        command: |
+          set -uo pipefail
+          WD="{{work_dir}}"; B='{{bundle_ref}}'
+          python3 "$WD/dlx.py" baserec "$WD" "{{run_id}}" "{{task_class}}" "{{signature}}" "{{rubric_version}}" > "$WD/pass0/record.json"
+          amplifier tool invoke design_ledger op=append record="$(cat "$WD/pass0/record.json")" --output json ${B:+--bundle "$B"} > "$WD/pass0/_a.txt" 2>/dev/null || true
+          echo '{"seeded":"true"}'
+        output: init_ledger
+        parse_json: true
+
+      # ----- LOOP: design-pass sub-recipe + deterministic gate, per iteration -----
+      - id: converge-loop
+        type: bash
+        command: "true"   # no-op container; the real work is in while_steps
+        while_condition: "{{loop_action}} != 'DONE' and {{loop_action}} != 'ESCALATE'"
+        max_while_iterations: 64   # hard safety cap; the REAL budget is enforced by the gate (budget_remaining -> DONE)
+        while_steps:
+          # (a) one governed pass — edits from the current best HTML
+          - id: run-pass
+            type: recipe
+            recipe: "./design-pass.yaml"
+            context:
+              run_id: "{{run_id}}"
+              task_class: "{{task_class}}"
+              signature: "{{signature}}"
+              rubric_version: "{{rubric_version}}"
+              working_head_path: "{{work_dir}}/best.html"
+              best_scores_path: "{{work_dir}}/best_scores.json"
+              pass_dir: "{{work_dir}}/pass-live"
+              bundle_ref: "{{bundle_ref}}"
+              tau: "{{tau}}"
+            output: pass_out
+            parse_json: true
+
+          # (b) deterministic GATE — the ONLY place a stop is decided
+          - id: gate
+            type: bash
+            command: |
+              set -uo pipefail
+              WD="{{work_dir}}"; B='{{bundle_ref}}'
+              N=$(cat "$WD/passes.txt" 2>/dev/null || echo 0); N=$((N+1)); echo "$N" > "$WD/passes.txt"
+              BR=$(( {{budget}} - N )); [ "$BR" -lt 0 ] && BR=0
+              amplifier tool invoke design_ledger op=best task_class="{{task_class}}" --output json ${B:+--bundle "$B"} > "$WD/_best.txt" 2>/dev/null || true
+              python3 "$WD/dlx.py" extract "$WD/_best.txt" > "$WD/best_record.json"
+              amplifier tool invoke design_ledger op=query task_class="{{task_class}}" --output json ${B:+--bundle "$B"} > "$WD/_all.txt" 2>/dev/null || true
+              python3 "$WD/dlx.py" extract "$WD/_all.txt" > "$WD/all_records.json"
+              python3 "$WD/dlx.py" gateprep "$WD" "{{prev_action}}" > "$WD/gateprep.json"
+              TR=$(python3 "$WD/dlx.py" get "$WD/gateprep.json" target_retried false)
+              DEC=$(python3 "$WD/dlx.py" get "$WD/gateprep.json" last_decision NO_GAIN)
+              BS="$(cat "$WD/best_scores.json" 2>/dev/null)"; [ -z "$BS" ] && BS=null
+              amplifier tool invoke design_controller op=gate best_scores="$BS" bar="{{bar}}" floors="{{floors}}" budget_remaining="$BR" recent_improvements="$(cat "$WD/improvements.json")" k="{{k}}" epsilon="{{epsilon}}" last_decision="$DEC" target_retried="$TR" --output json ${B:+--bundle "$B"} > "$WD/_g.txt" 2>/dev/null || true
+              python3 "$WD/dlx.py" extract "$WD/_g.txt" > "$WD/gate.json"
+              python3 "$WD/dlx.py" gateout "$WD" "$BR"
+            output: gate_out
+            parse_json: true
+        update_context:
+          loop_action: "{{gate_out.action}}"
+          prev_action: "{{gate_out.action}}"
+        break_when: "{{loop_action}} == 'DONE' or {{loop_action}} == 'ESCALATE'"
+
+      # ----- FINALIZE: report on the best artifact ever seen + escalation verdict -----
+      - id: finalize
+        type: bash
+        command: |
+          set -uo pipefail
+          WD="{{work_dir}}"; B='{{bundle_ref}}'
+          amplifier tool invoke design_ledger op=best task_class="{{task_class}}" --output json ${B:+--bundle "$B"} > "$WD/_best.txt" 2>/dev/null || true
+          python3 "$WD/dlx.py" extract "$WD/_best.txt" > "$WD/best_record.json"
+          python3 "$WD/dlx.py" verdict "$WD" > "$WD/verdict.json"
+          amplifier tool invoke render_report verdict="$(cat "$WD/verdict.json")" target_html_path="$WD/best.html" out_path="$WD/report.html" --output json ${B:+--bundle "$B"} > "$WD/_rep.txt" 2>/dev/null || true
+          python3 "$WD/dlx.py" extract "$WD/_rep.txt" > "$WD/report.json"
+          python3 "$WD/dlx.py" summary "$WD" "{{loop_action}}"
+        output: final_output
+        parse_json: true
