@@ -1,0 +1,234 @@
+# =============================================================================
+# harness-evolution.yaml  —  ASSET 8: the promotion gate (the ratchet -> tier C)
+# =============================================================================
+# The SLOW CLOCK (HARNESS_DESIGN.md §6/§7): a self-PR loop that turns a recurring,
+# expensive Judge catch into a cheap deterministic lint. Across runs, a recurring
+# penalty on a `signature` should graduate LEFTWARD:
+#
+#   subjective judgment -> versioned rubric criterion -> few-shot exemplar -> deterministic lint
+#
+# In Amplifier the slow clock is a git/PR/CI loop. A promotion is a PULL REQUEST to
+# this bundle (new lint predicate + a known-bad/known-good regression fixture pair +
+# a rubric-version bump that drops the now-redundant criterion). HUMAN RATIFICATION =
+# MERGE. Land on main + bundle-cache refresh -> the next run inherits the check FREE.
+#
+# WHAT THIS RECIPE DOES (and deliberately does NOT do)
+# ----------------------------------------------------
+#   MINES  the cross-run ledger for a `signature` the Judge repeatedly penalises.
+#   GATES  the top candidate against the five §6 criteria (deterministic parts in
+#          bash; the determinism judgment as ONE agent PROPOSE step).
+#   DRAFTS a ratifiable promotion proposal (markdown + JSON) — the PR-draft body.
+#
+# It STOPS SHORT of generating lint code, a regression test, or a rubric bump. That
+# is the human-ratified FOLLOW-UP build (the merged PR turns a ratified proposal into
+# the actual predicate + test + bump). No codegen is faked here — that would defeat
+# the gate the whole asset exists to protect (§6.5: "or it does not ship").
+#
+# DETERMINISM CONTRACT (same as design-pass / design-converge): every control-path
+# decision (recurrence count, the five-criteria gate) is computed by `hev.py` from a
+# `type: bash` step; the ledger is read via `amplifier tool invoke ... --output json`
+# unwrapped by the SAME repr-extractor as dlx.py. Those steps sample ZERO model
+# tokens. Only the single PROPOSE step is an LLM (proposing a measurable predicate IS
+# a judgment — exactly criterion §6.2). Structured data flows between steps as FILES
+# under {{work_dir}} (recipe templating renders dicts as Python repr, not JSON), so
+# all Python transforms live in a materialised `hev.py` (one base64 blob).
+#
+# SCHEMA LIMITATIONS (honest, see the authoring report)
+# -----------------------------------------------------
+#  * The §6.4 human ratification is the STAGE-2 APPROVAL GATE. Stage approval gates
+#    are STRUCTURAL + UNCONDITIONAL — they fire at the end of the stage regardless of
+#    the gate verdict. A gate that pages the human ONLY for `ready_for_ratification`
+#    (and silently records `exemplar_only` / `below_recurrence` / `no_candidate`) is
+#    NOT expressible. The approval prompt therefore states the verdict and the human
+#    approves "record + (if promotable) ratify" or denies. Stage 3 stamps `ratified`
+#    only when the verdict is `ready_for_ratification` (emit refuses otherwise).
+#  * §6.3 exemplar-PRECISION (predicate fires on NONE of the bar-clearing exemplars)
+#    cannot be machine-verified here: it needs the predicate to EXIST as code to run
+#    against the exemplar bank, and this recipe does not generate lint code. It is
+#    recorded as DEFERRED and the fixture pair is NAMED for the builder to verify.
+# =============================================================================
+#
+# CHANGELOG
+# ---------
+# v0.1.0 (2026-06-29):
+#   - NEW: asset-8 promotion gate. Staged MINE -> GATE(+PROPOSE)+approval -> EMIT.
+#     Deterministic mining/gating via bash -> hev.py (zero tokens); one LLM PROPOSE
+#     step for the determinism criterion; drafts a ratifiable PR body, stops short of
+#     codegen (the human-merged follow-up does that). Honest exemplar_only /
+#     below_recurrence / no_candidate stops.
+# =============================================================================
+
+name: "harness-evolution"
+description: "Asset 8 — the promotion gate. Mines the cross-run ledger for a recurring Judge catch, gates it against the five §6 criteria (deterministic + one PROPOSE step), and drafts a human-ratifiable promotion proposal (lint predicate + regression-fixture pair + rubric bump). Mines/gates/drafts only — stops short of codegen."
+version: "0.1.0"
+author: "design-loop harness"
+tags: ["design-loop", "promotion-gate", "ratchet", "tier-c", "governance", "staged"]
+
+context:
+  # --- what to mine ---
+  task_class: "landing_page"   # ledger partition key to scan
+  min_runs: 3                  # N: recurrence must span >= N DISTINCT run_ids (§6.1)
+  low_threshold: 1             # a dim score <= this == "the Judge penalised this quality"
+
+  # --- plumbing (ABSOLUTE paths; no ~ — recipe templating does not expanduser) ---
+  work_dir: "/tmp/harness-evolution/r-local"  # scratch + the emitted proposal files
+  bundle_ref: ""               # nested `amplifier tool invoke --bundle` (empty = auto-detect)
+
+  # --- ratification stamp (the REAL ratification is the Stage-2 approval gate; reaching
+  #     Stage 3 means the human approved, so emit stamps ratified iff the verdict is
+  #     promotable). Kept as a context var for auditability. ---
+  ratify_decision: "true"
+
+stages:
+  # ===========================================================================
+  # STAGE 1 — MINE (deterministic): scan the ledger for a recurring Judge catch.
+  # ===========================================================================
+  - name: mine
+    steps:
+      # 1. materialise hev.py + pull the cross-run ledger + best-so-far; rank candidates.
+      - id: scan-ledger
+        type: bash
+        command: |
+          set -uo pipefail
+          W="{{work_dir}}"; mkdir -p "$W"
+          B='{{bundle_ref}}'
+          echo 'IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiJoYXJuZXNzLWV2b2x1dGlvbiB0cmFuc2Zvcm1zIOKAlCBwdXJlLCBkZXRlcm1pbmlzdGljIGhlbHBlcnMgZm9yIGFzc2V0LTguCgpUaGUgcHJvbW90aW9uIGdhdGUgKEhBUk5FU1NfREVTSUdOLm1kIMKnNi/CpzcpIGlzIHRoZSAqc2xvdyBjbG9jayo6IGEgc2VsZi1QUiBsb29wCnRoYXQgdHVybnMgYSByZWN1cnJpbmcsIGV4cGVuc2l2ZSBKdWRnZSBjYXRjaCBpbnRvIGEgY2hlYXAgZGV0ZXJtaW5pc3RpYyBsaW50LiBUaGlzCmZpbGUgY2VudHJhbGlzZXMgZXZlcnkgbXVsdGktbGluZSBQeXRob24gdHJhbnNmb3JtIHRoZSBgaGFybmVzcy1ldm9sdXRpb24ueWFtbGAKcmVjaXBlIG5lZWRzLCBzbyB0aGUgcmVjaXBlIFlBTUwgYmFzaCBzdGVwcyBzdGF5IG9uZS1saW5lcnMgKG5vIGVtYmVkZGVkIG11bHRpLWxpbmUKUHl0aG9uLCB3aGljaCB3b3VsZCBicmVhayBZQU1MIGJsb2NrLXNjYWxhciBpbmRlbnRhdGlvbikuCgpJdCBtaXJyb3JzIHRoZSBgZGx4LnB5YCBwYXR0ZXJuIHVzZWQgYnkgZGVzaWduLXBhc3MgLyBkZXNpZ24tY29udmVyZ2U6IGVhY2ggY29tbWFuZApyZWFkcy93cml0ZXMgSlNPTiBmaWxlcyB1bmRlciBhIHdvcmsgZGlyIGBXYCBhbmQgcHJpbnRzIGEgc21hbGwgSlNPTiBvYmplY3QgdG8gc3Rkb3V0CmZvciB0aGUgcmVjaXBlIHRvIGNhcHR1cmUgdmlhIHBhcnNlX2pzb24uIFRoZSBgZXh0cmFjdGAgY29tbWFuZCBpcyB0aGUgU0FNRSByZXByCnVud3JhcHBlciBhcyBkbHgucHkgKHRoZSBgYW1wbGlmaWVyIHRvb2wgaW52b2tlIC0tb3V0cHV0IGpzb25gIHJlc3VsdCBpcyBhIHN0cihkaWN0KQpQeXRob24gcmVwciwgbm90IEpTT04pIOKAlCByZXVzZWQgdmVyYmF0aW0gc28gdGhlIGRldGVybWluaXN0aWMgdG9vbC1jYWxsIGNvbnRyYWN0IGlzCmlkZW50aWNhbCBhY3Jvc3MgdGhlIGhhcm5lc3MuCgpIT05FU1QgU0NPUEU6IHRoaXMgaGVscGVyIE1JTkVTIHRoZSBsZWRnZXIsIEdBVEVTIHRoZSB0b3AgY2FuZGlkYXRlIGFnYWluc3QgdGhlIGZpdmUKwqc2IGNyaXRlcmlhICh0aGUgZGV0ZXJtaW5pc3RpYyBwYXJ0cyksIGFuZCBEUkFGVFMgYSByYXRpZmlhYmxlIHByb21vdGlvbiBwcm9wb3NhbC4gSXQKZGVsaWJlcmF0ZWx5IGRvZXMgTk9UIGdlbmVyYXRlIGxpbnQgY29kZSwgYSByZWdyZXNzaW9uIHRlc3QsIG9yIGEgcnVicmljIGJ1bXAg4oCUIHRob3NlCmFyZSB0aGUgaHVtYW4tcmF0aWZpZWQgZm9sbG93LXVwICh0aGUgbWVyZ2VkIFBSKS4gTm8gY29kZWdlbiBpcyBmYWtlZCBoZXJlLgoiIiIKZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IGFzdAppbXBvcnQganNvbgppbXBvcnQgcmUKaW1wb3J0IHN5cwpmcm9tIGNvbGxlY3Rpb25zIGltcG9ydCBDb3VudGVyCmZyb20gZGF0ZXRpbWUgaW1wb3J0IGRhdGV0aW1lLCB0aW1lem9uZQoKRElNUyA9IFsKICAgICJjbGFyaXR5IiwgImVsZWdhbmNlIiwgInJlc3RyYWludCIsICJlbXBvd2VybWVudCIsCiAgICAiYWdlbmN5IiwgImVhc2UiLCAiY2hhcmFjdGVyIiwgInBvaW50IiwKXQoKIyBzaWduYXR1cmVzIHRoYXQgYXJlIG5vdCByZWFsIGpvaW4ga2V5cyAobmV2ZXIgYSBwcm9tb3Rpb24gY2FuZGlkYXRlKQpfTlVMTF9TSUdTID0geyIiLCAidW5zaWduZWQiLCAidW5rbm93biIsICJub25lIiwgIm51bGwifQoKCmRlZiBfbG9hZChwYXRoLCBkZWZhdWx0PU5vbmUpOgogICAgdHJ5OgogICAgICAgIHdpdGggb3BlbihwYXRoLCBlbmNvZGluZz0idXRmLTgiKSBhcyBmOgogICAgICAgICAgICByZXR1cm4ganNvbi5sb2FkKGYpCiAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgIHJldHVybiBkZWZhdWx0CgoKZGVmIF9kdW1wKG9iaiwgcGF0aCk6CiAgICB3aXRoIG9wZW4ocGF0aCwgInciLCBlbmNvZGluZz0idXRmLTgiKSBhcyBmOgogICAgICAgIGpzb24uZHVtcChvYmosIGYsIGVuc3VyZV9hc2NpaT1GYWxzZSwgaW5kZW50PTIpCgoKZGVmIGV4dHJhY3QocmF3X2ZpbGUpOgogICAgIiIiUHVsbCB0aGUgY2xlYW4gdG9vbC1yZXN1bHQgSlNPTiBvdXQgb2YgYGFtcGxpZmllciB0b29sIGludm9rZSAtLW91dHB1dCBqc29uYC4KCiAgICBUaGF0IENMSSBwcmludHMgbG9nIGxpbmVzIHRoZW4gYSBwcmV0dHkgYHsic3RhdHVzIiwidG9vbCIsInJlc3VsdCJ9YCBibG9jayB3aG9zZQogICAgYHJlc3VsdGAgaXMgYSBzdHIoZGljdCkgUHl0aG9uIHJlcHIgKHNpbmdsZSBxdW90ZXMpLCBub3QgSlNPTi4gSWRlbnRpY2FsIHRvCiAgICBkbHgucHk6ZXh0cmFjdCDigJQgcmV1c2VkIHNvIHRoZSBkZXRlcm1pbmlzdGljIHRvb2wtY2FsbCBjb250cmFjdCBzdGF5cyB1bmlmb3JtLgogICAgIiIiCiAgICB0cnk6CiAgICAgICAgcmF3ID0gb3BlbihyYXdfZmlsZSwgZW5jb2Rpbmc9InV0Zi04IikucmVhZCgpCiAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgIHByaW50KCJudWxsIik7IHJldHVybgogICAgbSA9IHJlLnNlYXJjaChyJ1x7XHMqInN0YXR1cyIuKlx9XHMqXFonLCByYXcsIHJlLlMpCiAgICBpZiBub3QgbToKICAgICAgICBwcmludCgibnVsbCIpOyByZXR1cm4KICAgIHRyeToKICAgICAgICBvYmogPSBqc29uLmxvYWRzKG0uZ3JvdXAoMCkpCiAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgIHByaW50KCJudWxsIik7IHJldHVybgogICAgcmVzID0gb2JqLmdldCgicmVzdWx0IikKICAgIGlmIGlzaW5zdGFuY2UocmVzLCBzdHIpOgogICAgICAgIHRyeToKICAgICAgICAgICAgcmVzID0gYXN0LmxpdGVyYWxfZXZhbChyZXMpCiAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbjoKICAgICAgICAgICAgcGFzcwogICAgcHJpbnQoanNvbi5kdW1wcyhyZXMpKQoKCmRlZiBfd29yc3RfZGltKHNjb3Jlcyk6CiAgICBpZiBub3QgaXNpbnN0YW5jZShzY29yZXMsIGRpY3QpOgogICAgICAgIHJldHVybiBOb25lCiAgICByZXR1cm4gbWluKGZsb2F0KHNjb3Jlcy5nZXQoZCwgMCkpIGZvciBkIGluIERJTVMpCgoKZGVmIF9sb3dfZGltcyhzY29yZXMsIHRocik6CiAgICBpZiBub3QgaXNpbnN0YW5jZShzY29yZXMsIGRpY3QpOgogICAgICAgIHJldHVybiBbXQogICAgcmV0dXJuIFtkIGZvciBkIGluIERJTVMgaWYgZmxvYXQoc2NvcmVzLmdldChkLCAwKSkgPD0gdGhyXQoKCmRlZiBfcmVmKHJlYyk6CiAgICAiIiJBIG5hbWVhYmxlIGZpeHR1cmUgcmVmZXJlbmNlIGZvciBhIGxlZGdlciByZWNvcmQuCgogICAgUHJlZmVyIGEgY29uY3JldGUgYXJ0aWZhY3RfcmVmIChhIHBhdGgvc2hhIHRoZSBidWlsZGVyIGNhbiBmZXRjaCk7IG90aGVyd2lzZSBhCiAgICBkdXJhYmxlIGxlZGdlciBMT0NBVE9SIChyZWNvcmRzIGZyb20gc2NvcmVkIHBhc3NlcyBtYXkgbm90IGNvLWxvY2F0ZSB0aGUgYXJ0aWZhY3QKICAgIGJ5dGVzIOKAlCBzZWUgSEFSTkVTU19ERVNJR04ubWQgwqc1KS4gRWl0aGVyIHdheSB0aGUgaHVtYW4vYnVpbGRlciBjYW4gZmluZCBpdC4KICAgICIiIgogICAgYXJ0ID0gcmVjLmdldCgiYXJ0aWZhY3RfcmVmIikKICAgIGlmIGlzaW5zdGFuY2UoYXJ0LCBzdHIpIGFuZCBhcnQ6CiAgICAgICAgcmV0dXJuIGFydAogICAgdGMgPSByZWMuZ2V0KCJ0YXNrX2NsYXNzIiwgIj8iKQogICAgZWlkID0gcmVjLmdldCgiZW50cnlfaWQiLCAiPyIpCiAgICByZXR1cm4gZiJsZWRnZXI6e3RjfSNlbnRyeXtlaWR9IChydW49e3JlYy5nZXQoJ3J1bl9pZCcsJz8nKX0gcGFzcz17cmVjLmdldCgncGFzcycsJz8nKX0pIgoKCmRlZiBtaW5lKHJlY29yZHNfZmlsZSwgbG93X3RocmVzaG9sZCwgbWluX3J1bnMsIG91dF9maWxlKToKICAgICIiIlNjYW4gdGhlIGxlZGdlciBmb3Igc2lnbmF0dXJlcyB0aGUgSnVkZ2UgcmVwZWF0ZWRseSBwZW5hbGlzZXMgYWNyb3NzIHJ1bnMuCgogICAgQSByZWNvcmQgaXMgYSAnanVkZ2UgcGVuYWx0eScgZm9yIGl0cyBzaWduYXR1cmUgd2hlbiAoZGV0ZXJtaW5pc3RpYyk6CiAgICAgIC0gc2lnbmF0dXJlIGlzIGEgcmVhbCBqb2luIGtleSAobm90IHVuc2lnbmVkL3Vua25vd24pLCBBTkQKICAgICAgLSBzY29yZXMgaXMgYSBkaWN0ICh0aGUgRVhQRU5TSVZFIGp1ZGdlIHdhcyBhY3R1YWxseSBzcGVudCksIEFORAogICAgICAtIHdvcnN0X2RpbShzY29yZXMpIDw9IGxvd190aHJlc2hvbGQgKGl0IGFzc2lnbmVkIGEgbG93IHNjb3JlIHRvIHNvbWUgcXVhbGl0eSkuCgogICAgUmVjdXJyZW5jZSA9IG51bWJlciBvZiBESVNUSU5DVCBydW5faWRzIChub3QgcGFzc2VzIG9mIG9uZSBydW4sIHBlciDCpzYuMSkuCiAgICBDYW5kaWRhdGVzIGFyZSByYW5rZWQgKGRpc3RpbmN0X3J1bnMgZGVzYywgb2NjdXJyZW5jZXMgZGVzYywgc2lnbmF0dXJlIGFzYykuCiAgICAiIiIKICAgIHRociA9IGZsb2F0KGxvd190aHJlc2hvbGQpCiAgICBuZWVkID0gaW50KG1pbl9ydW5zKQogICAgcmVjcyA9IF9sb2FkKHJlY29yZHNfZmlsZSwgW10pIG9yIFtdCiAgICBpZiBub3QgaXNpbnN0YW5jZShyZWNzLCBsaXN0KToKICAgICAgICByZWNzID0gW10KCiAgICBncm91cHM6IGRpY3Rbc3RyLCBkaWN0XSA9IHt9CiAgICBmb3IgciBpbiByZWNzOgogICAgICAgIGlmIG5vdCBpc2luc3RhbmNlKHIsIGRpY3QpOgogICAgICAgICAgICBjb250aW51ZQogICAgICAgIHNpZyA9IHIuZ2V0KCJzaWduYXR1cmUiKQogICAgICAgIGlmIG5vdCBpc2luc3RhbmNlKHNpZywgc3RyKSBvciBzaWcuc3RyaXAoKS5sb3dlcigpIGluIF9OVUxMX1NJR1M6CiAgICAgICAgICAgIGNvbnRpbnVlCiAgICAgICAgc2NvcmVzID0gci5nZXQoInNjb3JlcyIpCiAgICAgICAgd2QgPSBfd29yc3RfZGltKHNjb3JlcykKICAgICAgICBpZiB3ZCBpcyBOb25lIG9yIHdkID4gdGhyOgogICAgICAgICAgICBjb250aW51ZQogICAgICAgIGcgPSBncm91cHMuc2V0ZGVmYXVsdChzaWcsIHsicnVucyI6IHNldCgpLCAib2NjdXJyZW5jZXMiOiAwLCAibG93IjogQ291bnRlcigpLCAiZXhhbXBsZXMiOiBbXX0pCiAgICAgICAgZ1sicnVucyJdLmFkZChyLmdldCgicnVuX2lkIikpCiAgICAgICAgZ1sib2NjdXJyZW5jZXMiXSArPSAxCiAgICAgICAgZ1sibG93Il0udXBkYXRlKF9sb3dfZGltcyhzY29yZXMsIHRocikpCiAgICAgICAgZ1siZXhhbXBsZXMiXS5hcHBlbmQoewogICAgICAgICAgICAicnVuX2lkIjogci5nZXQoInJ1bl9pZCIpLAogICAgICAgICAgICAicGFzcyI6IHIuZ2V0KCJwYXNzIiksCiAgICAgICAgICAgICJlbnRyeV9pZCI6IHIuZ2V0KCJlbnRyeV9pZCIpLAogICAgICAgICAgICAid29yc3RfZGltIjogd2QsCiAgICAgICAgICAgICJydWJyaWNfdmVyc2lvbiI6IHIuZ2V0KCJydWJyaWNfdmVyc2lvbiIpLAogICAgICAgICAgICAicmVqZWN0X3JlYXNvbiI6IHIuZ2V0KCJyZWplY3RfcmVhc29uIiksCiAgICAgICAgICAgICJyZWYiOiBfcmVmKHIpLAogICAgICAgICAgICAic2NvcmVzIjogc2NvcmVzLAogICAgICAgIH0pCgogICAgY2FuZGlkYXRlcyA9IFtdCiAgICBmb3Igc2lnLCBnIGluIGdyb3Vwcy5pdGVtcygpOgogICAgICAgIHJ1bnMgPSBzb3J0ZWQoeCBmb3IgeCBpbiBnWyJydW5zIl0gaWYgeCBpcyBub3QgTm9uZSkKICAgICAgICBleGFtcGxlcyA9IHNvcnRlZChnWyJleGFtcGxlcyJdLCBrZXk9bGFtYmRhIGU6IChlWyJ3b3JzdF9kaW0iXSwgZS5nZXQoInBhc3MiKSBvciAwKSkKICAgICAgICBwZW5hbGlzZWRfZGltID0gZ1sibG93Il0ubW9zdF9jb21tb24oMSlbMF1bMF0gaWYgZ1sibG93Il0gZWxzZSBOb25lCiAgICAgICAgY2FuZGlkYXRlcy5hcHBlbmQoewogICAgICAgICAgICAic2lnbmF0dXJlIjogc2lnLAogICAgICAgICAgICAicmVjdXJyZW5jZV9ydW5zIjogbGVuKHJ1bnMpLAogICAgICAgICAgICAib2NjdXJyZW5jZXMiOiBnWyJvY2N1cnJlbmNlcyJdLAogICAgICAgICAgICAicnVuX2lkcyI6IHJ1bnMsCiAgICAgICAgICAgICJwZW5hbGlzZWRfZGltIjogcGVuYWxpc2VkX2RpbSwKICAgICAgICAgICAgIm1lZXRzX3JlY3VycmVuY2UiOiBsZW4ocnVucykgPj0gbmVlZCwKICAgICAgICAgICAgIndvcnN0X2V4YW1wbGVzIjogZXhhbXBsZXNbOjNdLAogICAgICAgIH0pCgogICAgY2FuZGlkYXRlcy5zb3J0KGtleT1sYW1iZGEgYzogKC1jWyJyZWN1cnJlbmNlX3J1bnMiXSwgLWNbIm9jY3VycmVuY2VzIl0sIGNbInNpZ25hdHVyZSJdKSkKICAgIF9kdW1wKGNhbmRpZGF0ZXMsIG91dF9maWxlKQoKICAgIHRvcCA9IGNhbmRpZGF0ZXNbMF0gaWYgY2FuZGlkYXRlcyBlbHNlIE5vbmUKICAgIHByaW50KGpzb24uZHVtcHMoewogICAgICAgICJjYW5kaWRhdGVzX2NvdW50IjogbGVuKGNhbmRpZGF0ZXMpLAogICAgICAgICJoYXNfY2FuZGlkYXRlIjogInRydWUiIGlmIHRvcCBlbHNlICJmYWxzZSIsCiAgICAgICAgInRvcF9zaWduYXR1cmUiOiB0b3BbInNpZ25hdHVyZSJdIGlmIHRvcCBlbHNlICIiLAogICAgICAgICJ0b3BfcnVucyI6IHRvcFsicmVjdXJyZW5jZV9ydW5zIl0gaWYgdG9wIGVsc2UgMCwKICAgICAgICAibG93X3RocmVzaG9sZCI6IHRociwKICAgICAgICAibWluX3J1bnMiOiBuZWVkLAogICAgfSkpCgoKZGVmIGNhbmRpZGF0ZShjYW5kaWRhdGVzX2ZpbGUsIGJlc3RfcmVjb3JkX2ZpbGUsIG91dF9maWxlKToKICAgICIiIlNlbGVjdCB0aGUgdG9wIGNhbmRpZGF0ZTsgYmluZCBrbm93bi1iYWQgKHRyaWdnZXJpbmcpICsga25vd24tZ29vZCAoYmVzdCkgcmVmcy4KCiAgICBFeGVtcGxhci1wcmVjaXNpb24gKMKnNi4zKSBjYW5ub3QgYmUgbWFjaGluZS12ZXJpZmllZCBoZXJlOiB0aGF0IG5lZWRzIHRoZSBwcmVkaWNhdGUKICAgIHRvIEVYSVNUIGFzIGNvZGUgdG8gcnVuIGFnYWluc3QgdGhlIGJhci1jbGVhcmluZyBleGVtcGxhciBiYW5rLCBhbmQgdGhpcyByZWNpcGUgZG9lcwogICAgbm90IGdlbmVyYXRlIGxpbnQgY29kZS4gU28gd2UgaW5zdGVhZCBOQU1FIHRoZSBmaXh0dXJlIHBhaXIgdGhlIGJ1aWxkZXIvaHVtYW4gd2lsbAogICAgdXNlIHRvIHZlcmlmeSB6ZXJvIGZhbHNlIHBvc2l0aXZlcy4KICAgICIiIgogICAgY2FuZHMgPSBfbG9hZChjYW5kaWRhdGVzX2ZpbGUsIFtdKSBvciBbXQogICAgYmVzdCA9IF9sb2FkKGJlc3RfcmVjb3JkX2ZpbGUpCiAgICBpZiBub3QgY2FuZHM6CiAgICAgICAgb3V0ID0geyJzaWduYXR1cmUiOiAiIiwgImhhc19jYW5kaWRhdGUiOiAiZmFsc2UifQogICAgICAgIF9kdW1wKG91dCwgb3V0X2ZpbGUpCiAgICAgICAgcHJpbnQoanNvbi5kdW1wcyh7CiAgICAgICAgICAgICJoYXNfY2FuZGlkYXRlIjogImZhbHNlIiwgInNpZ25hdHVyZSI6ICIiLAogICAgICAgICAgICAicmVjdXJyZW5jZV9ydW5zIjogMCwgInBlbmFsaXNlZF9kaW0iOiAiIiwgIm1lZXRzX3JlY3VycmVuY2UiOiAiZmFsc2UiLAogICAgICAgIH0pKQogICAgICAgIHJldHVybgoKICAgIHRvcCA9IGNhbmRzWzBdCiAgICBiYWQgPSB0b3BbIndvcnN0X2V4YW1wbGVzIl1bMF0gaWYgdG9wLmdldCgid29yc3RfZXhhbXBsZXMiKSBlbHNlIHt9CiAgICBnb29kX3JlZiA9IF9yZWYoYmVzdCkgaWYgaXNpbnN0YW5jZShiZXN0LCBkaWN0KSBlbHNlIE5vbmUKICAgIGdvb2Rfc2NvcmVzID0gYmVzdC5nZXQoInNjb3JlcyIpIGlmIGlzaW5zdGFuY2UoYmVzdCwgZGljdCkgZWxzZSBOb25lCgogICAgY3R4ID0gewogICAgICAgICJzaWduYXR1cmUiOiB0b3BbInNpZ25hdHVyZSJdLAogICAgICAgICJyZWN1cnJlbmNlX3J1bnMiOiB0b3BbInJlY3VycmVuY2VfcnVucyJdLAogICAgICAgICJvY2N1cnJlbmNlcyI6IHRvcFsib2NjdXJyZW5jZXMiXSwKICAgICAgICAicnVuX2lkcyI6IHRvcFsicnVuX2lkcyJdLAogICAgICAgICJwZW5hbGlzZWRfZGltIjogdG9wLmdldCgicGVuYWxpc2VkX2RpbSIpLAogICAgICAgICJtZWV0c19yZWN1cnJlbmNlIjogdG9wWyJtZWV0c19yZWN1cnJlbmNlIl0sCiAgICAgICAgImZpeHR1cmVfYmFkX3JlZiI6IGJhZC5nZXQoInJlZiIpLAogICAgICAgICJmaXh0dXJlX2JhZF9ydW4iOiBiYWQuZ2V0KCJydW5faWQiKSwKICAgICAgICAiZml4dHVyZV9iYWRfc2NvcmVzIjogYmFkLmdldCgic2NvcmVzIiksCiAgICAgICAgImZpeHR1cmVfZ29vZF9yZWYiOiBnb29kX3JlZiwKICAgICAgICAiZml4dHVyZV9nb29kX3Njb3JlcyI6IGdvb2Rfc2NvcmVzLAogICAgICAgICJ3b3JzdF9leGFtcGxlcyI6IHRvcC5nZXQoIndvcnN0X2V4YW1wbGVzIiwgW10pLAogICAgfQogICAgX2R1bXAoY3R4LCBvdXRfZmlsZSkKICAgIHByaW50KGpzb24uZHVtcHMoewogICAgICAgICJoYXNfY2FuZGlkYXRlIjogInRydWUiLAogICAgICAgICJzaWduYXR1cmUiOiB0b3BbInNpZ25hdHVyZSJdLAogICAgICAgICJyZWN1cnJlbmNlX3J1bnMiOiB0b3BbInJlY3VycmVuY2VfcnVucyJdLAogICAgICAgICJwZW5hbGlzZWRfZGltIjogdG9wLmdldCgicGVuYWxpc2VkX2RpbSIpIG9yICIiLAogICAgICAgICJtZWV0c19yZWN1cnJlbmNlIjogInRydWUiIGlmIHRvcFsibWVldHNfcmVjdXJyZW5jZSJdIGVsc2UgImZhbHNlIiwKICAgIH0pKQoKCmRlZiBfZHJhZnRfbWFya2Rvd24ocCk6CiAgICAiIiJSZW5kZXIgdGhlIHByb21vdGlvbiBwcm9wb3NhbCBhcyBhIGh1bWFuLXJhdGlmaWFibGUgUFItZHJhZnQgYm9keS4iIiIKICAgIGNyaXQgPSBwLmdldCgiY3JpdGVyaWEiLCB7fSkKICAgIGRlZiBtYXJrKG9rKToKICAgICAgICByZXR1cm4ge1RydWU6ICJQQVNTIiwgRmFsc2U6ICJGQUlMIiwgTm9uZTogIkRFRkVSUkVEIn0uZ2V0KG9rLCBzdHIob2spKQogICAgbGluZXMgPSBbXQogICAgbGluZXMuYXBwZW5kKGYiIyBQcm9tb3Rpb24gcHJvcG9zYWwg4oCUIGB7cC5nZXQoJ3NpZ25hdHVyZScsJycpfWAiKQogICAgbGluZXMuYXBwZW5kKCIiKQogICAgbGluZXMuYXBwZW5kKGYiKipTdGF0dXM6Kioge3AuZ2V0KCdzdGF0dXMnLCcnKX0gICIpCiAgICBsaW5lcy5hcHBlbmQoZiIqKlJhdGlmaWVkOioqIHtwLmdldCgncmF0aWZpZWQnLCBGYWxzZSl9ICAiKQogICAgbGluZXMuYXBwZW5kKGYiKipHZW5lcmF0ZWQ6Kioge3AuZ2V0KCd0cycsJycpfSIpCiAgICBsaW5lcy5hcHBlbmQoIiIpCiAgICBsaW5lcy5hcHBlbmQoIj4gQXNzZXQgOCDigJQgdGhlIHJhdGNoZXQgKEhBUk5FU1NfREVTSUdOLm1kIMKnNikuIFRoaXMgaXMgYSBQUi1kcmFmdCBib2R5OiIpCiAgICBsaW5lcy5hcHBlbmQoIj4gYSBodW1hbiBtZXJnZSByYXRpZmllcyBpdDsgYSBmb2xsb3ctdXAgYnVpbGQgdHVybnMgYSByYXRpZmllZCBwcm9wb3NhbCIpCiAgICBsaW5lcy5hcHBlbmQoIj4gaW50byB0aGUgYWN0dWFsIGxpbnQgcHJlZGljYXRlICsgcmVncmVzc2lvbiB0ZXN0ICsgcnVicmljIGJ1bXAuIFRoaXMiKQogICAgbGluZXMuYXBwZW5kKCI+IHJlY2lwZSBNSU5FUywgR0FURVMsIGFuZCBEUkFGVFMgb25seSDigJQgaXQgZG9lcyBub3QgZ2VuZXJhdGUgbGludCBjb2RlLiIpCiAgICBsaW5lcy5hcHBlbmQoIiIpCiAgICBsaW5lcy5hcHBlbmQoIiMjIFRoZSBsZWZ0d2FyZCBncmFkdWF0aW9uIikKICAgIGxpbmVzLmFwcGVuZCgiYHN1YmplY3RpdmUganVkZ21lbnQg4oaSIHZlcnNpb25lZCBydWJyaWMgY3JpdGVyaW9uIOKGkiBmZXctc2hvdCBleGVtcGxhciDihpIgZGV0ZXJtaW5pc3RpYyBsaW50YCIpCiAgICBsaW5lcy5hcHBlbmQoIiIpCiAgICBsaW5lcy5hcHBlbmQoIiMjIFRoZSBmaXZlLWNyaXRlcmlhIGdhdGUgKG1pbi1ub3QtbWVhbiDigJQgYSBzaW5nbGUgRkFJTCBibG9ja3MgdGhlIGxpbnQpIikKICAgIGxpbmVzLmFwcGVuZCgiIikKICAgIGxpbmVzLmFwcGVuZCgifCAjIHwgQ3JpdGVyaW9uIHwgVmVyZGljdCB8IEV2aWRlbmNlIHwiKQogICAgbGluZXMuYXBwZW5kKCJ8LS0tfC0tLS0tLS0tLS0tfC0tLS0tLS0tLXwtLS0tLS0tLS0tfCIpCiAgICByYyA9IGNyaXQuZ2V0KCJyZWN1cnJlbmNlIiwge30pCiAgICBsaW5lcy5hcHBlbmQoZiJ8IDEgfCBSZWN1cnJlbmNlIOKJpSBOIGRpc3RpbmN0IHJ1bnMgfCB7bWFyayhyYy5nZXQoJ3Bhc3MnKSl9IHwgIgogICAgICAgICAgICAgICAgIGYie3JjLmdldCgnb2JzZXJ2ZWRfcnVucycsJz8nKX0gcnVucyAobmVlZCB7cmMuZ2V0KCdyZXF1aXJlZF9ydW5zJywnPycpfSk6ICIKICAgICAgICAgICAgICAgICBmInsnLCAnLmpvaW4oc3RyKHgpIGZvciB4IGluIHJjLmdldCgncnVuX2lkcycsIFtdKSl9IHwiKQogICAgZHQgPSBjcml0LmdldCgiZGV0ZXJtaW5pc20iLCB7fSkKICAgIGxpbmVzLmFwcGVuZChmInwgMiB8IERldGVybWluaXNtIChtZWFzdXJhYmxlIHByZWRpY2F0ZSkgfCB7bWFyayhkdC5nZXQoJ3Bhc3MnKSl9IHwgIgogICAgICAgICAgICAgICAgIGYie2R0LmdldCgnbm90ZScsJycpfSB8IikKICAgIGVwID0gY3JpdC5nZXQoImV4ZW1wbGFyX3ByZWNpc2lvbiIsIHt9KQogICAgbGluZXMuYXBwZW5kKGYifCAzIHwgUHJlY2lzaW9uIG9uIGV4ZW1wbGFyIGJhbmsgfCB7bWFyayhlcC5nZXQoJ3Bhc3MnKSl9IHwge2VwLmdldCgnbm90ZScsJycpfSB8IikKICAgIGhyID0gY3JpdC5nZXQoImh1bWFuX3JhdGlmaWNhdGlvbiIsIHt9KQogICAgbGluZXMuYXBwZW5kKGYifCA0IHwgSHVtYW4gcmF0aWZpY2F0aW9uIChQUiBtZXJnZSkgfCB7bWFyayhoci5nZXQoJ3Bhc3MnKSl9IHwge2hyLmdldCgnbm90ZScsJycpfSB8IikKICAgIHJ0ID0gY3JpdC5nZXQoInJlZ3Jlc3Npb25fdGVzdCIsIHt9KQogICAgbGluZXMuYXBwZW5kKGYifCA1IHwgQnVuZGxlZCByZWdyZXNzaW9uIHRlc3QgKGJhZCtnb29kKSB8IHttYXJrKHJ0LmdldCgncGFzcycpKX0gfCB7cnQuZ2V0KCdub3RlJywnJyl9IHwiKQogICAgbGluZXMuYXBwZW5kKCIiKQogICAgbGluZXMuYXBwZW5kKCIjIyBQcm9wb3NlZCBkZXRlcm1pbmlzdGljIGxpbnQiKQogICAgbGluZXMuYXBwZW5kKCIiKQogICAgbGluZXMuYXBwZW5kKGYiLSAqKlNpZ25hdHVyZSByZXRpcmVkIGZyb20gcnVicmljOioqIGB7cC5nZXQoJ3J1YnJpY19jcml0ZXJpb25fdG9fcmV0aXJlJywnJyl9YCIpCiAgICBsaW5lcy5hcHBlbmQoZiItICoqUHJlZGljYXRlOioqIHtwLmdldCgncHJvcG9zZWRfcHJlZGljYXRlJywnKG5vdC1kZXRlcm1pbmlzdGljIOKAlCBzdGF5cyBhIEp1ZGdlIGNyaXRlcmlvbiAvIGV4ZW1wbGFyKScpfSIpCiAgICBsaW5lcy5hcHBlbmQoZiItICoqVGhyZXNob2xkOioqIHtwLmdldCgndGhyZXNob2xkJywnJyl9IikKICAgIGxpbmVzLmFwcGVuZChmIi0gKipNZWFzdXJlbWVudDoqKiB7cC5nZXQoJ21lYXN1cmVtZW50JywnJyl9IikKICAgIGxpbmVzLmFwcGVuZChmIi0gKipSdWJyaWMgdmVyc2lvbiBidW1wOioqIHtwLmdldCgncnVicmljX3ZlcnNpb25fYnVtcCcsJycpfSIpCiAgICBsaW5lcy5hcHBlbmQoIiIpCiAgICBsaW5lcy5hcHBlbmQoIiMjIFJlZ3Jlc3Npb24gZml4dHVyZSBwYWlyICh0aGUgYnVpbGRlciBtYXRlcmlhbGlzZXMgdGhlc2UpIikKICAgIGxpbmVzLmFwcGVuZCgiIikKICAgIGxpbmVzLmFwcGVuZChmIi0gKipLbm93bi1CQUQgKG11c3QgY2F0Y2gpKiog4oCUIGZyb20gdHJpZ2dlcmluZyBsZWRnZXIgcmVjb3JkOiBge3AuZ2V0KCdmaXh0dXJlX2JhZF9yZWYnLCcnKX1gIikKICAgIGxpbmVzLmFwcGVuZChmIi0gKipLbm93bi1HT09EIChtdXN0IHBhc3MpKiog4oCUIGZyb20gYmVzdC1zby1mYXI6IGB7cC5nZXQoJ2ZpeHR1cmVfZ29vZF9yZWYnLCcnKX1gIikKICAgIGxpbmVzLmFwcGVuZCgiIikKICAgIGxpbmVzLmFwcGVuZCgiIyMgUmF0aWZpZWQgZm9sbG93LXVwIChOT1QgZG9uZSBieSB0aGlzIHJlY2lwZSkiKQogICAgbGluZXMuYXBwZW5kKCIiKQogICAgbGluZXMuYXBwZW5kKCIxLiBBZGQgdGhlIHByZWRpY2F0ZSB0byBgdG9vbC1kZXNpZ24tbGludHNgLiIpCiAgICBsaW5lcy5hcHBlbmQoIjIuIERyb3AgdGhlIHJldGlyZWQgY3JpdGVyaW9uIGZyb20gdGhlIGBkZXNpZ24tY3JpdGljYC9gZGVzaWduLWp1ZGdlYCBydWJyaWM7IGJ1bXAgaXRzIHZlcnNpb24uIikKICAgIGxpbmVzLmFwcGVuZCgiMy4gQWRkIHRoZSBrbm93bi1iYWQva25vd24tZ29vZCBwYWlyIHRvIGB0ZXN0cy9gIChDSSBtdXN0IGNhdGNoIGJhZCwgcGFzcyBnb29kKS4iKQogICAgbGluZXMuYXBwZW5kKCI0LiBNZXJnZSB0byBgbWFpbmAgKyByZWZyZXNoIHRoZSBidW5kbGUgY2FjaGUg4oaSIHRoZSBuZXh0IHJ1biBpbmhlcml0cyB0aGUgY2hlY2sgZm9yIGZyZWUuIikKICAgIGxpbmVzLmFwcGVuZCgiIikKICAgIHJldHVybiAiXG4iLmpvaW4obGluZXMpCgoKZGVmIGdhdGUoY2FuZGlkYXRlX2ZpbGUsIHByb3Bvc2FsX2ZpbGUsIG1pbl9ydW5zLCBvdXRfZmlsZSk6CiAgICAiIiJBcHBseSB0aGUgwqc2IGZpdmUtY3JpdGVyaWEgZ2F0ZSAoZGV0ZXJtaW5pc3RpYyBwYXJ0cykgb3ZlciBjYW5kaWRhdGUgKyBQUk9QT1NFLgoKICAgIGBwcm9wb3NhbF9maWxlYCBpcyB0aGUgYWdlbnQgUFJPUE9TRSBzdGVwJ3MgSlNPTjogaXQgbXVzdCBjYXJyeSBgZGV0ZXJtaW5pc3RpY2AKICAgIChib29sLyJub3QtZGV0ZXJtaW5pc3RpYyIpIGFuZCwgd2hlbiBkZXRlcm1pbmlzdGljLCBgcHJlZGljYXRlYCArIGB0aHJlc2hvbGRgCiAgICAoKyBvcHRpb25hbCBtZWFzdXJlbWVudCAvIHJ1YnJpY19jcml0ZXJpb25fdG9fcmV0aXJlIC8gcnVicmljX3ZlcnNpb25fYnVtcCkuCgogICAgT3V0Y29tZXMgKGVhY2ggc3RvcHMgc2hvcnQgaG9uZXN0bHkpOgogICAgICBub19jYW5kaWRhdGUgICAgICAgIOKAlCBub3RoaW5nIHJlY3VycmVkOyBub3RoaW5nIHRvIHByb21vdGUuCiAgICAgIGJlbG93X3JlY3VycmVuY2UgICAg4oCUIHJlY3VycmVuY2UgPCBOIGRpc3RpbmN0IHJ1bnMgKGNyaXRlcmlvbiAxIGZhaWxzKS4KICAgICAgZXhlbXBsYXJfb25seSAgICAgICDigJQgbm90IGV4cHJlc3NpYmxlIGFzIGEgcHJlZGljYXRlIChjcml0ZXJpb24gMiBmYWlscyk6IGl0IGNhbgogICAgICAgICAgICAgICAgICAgICAgICAgICAgb25seSBncmFkdWF0ZSB0byBhIGZldy1zaG90IEVYRU1QTEFSLCBuZXZlciBhIGxpbnQuIFJlY29yZGVkLgogICAgICBtaXNzaW5nX2ZpeHR1cmVzICAgIOKAlCBubyBuYW1lYWJsZSBiYWQvZ29vZCBwYWlyIChjcml0ZXJpb24gNSBjYW5ub3Qgc2hpcCkuCiAgICAgIHJlYWR5X2Zvcl9yYXRpZmljYXRpb24g4oCUIGNyaXRlcmlhIDEsMiw1IGhvbGQgZGV0ZXJtaW5pc3RpY2FsbHk7IDMgZGVmZXJyZWQgdG8gdGhlCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBidWlsZGVyIChuZWVkcyB0aGUgcHJlZGljYXRlIGFzIGNvZGUpOyA0IGlzIHRoZSBodW1hbiBtZXJnZS4KICAgICIiIgogICAgbmVlZCA9IGludChtaW5fcnVucykKICAgIGNhbmQgPSBfbG9hZChjYW5kaWRhdGVfZmlsZSwge30pIG9yIHt9CiAgICBwcm9wID0gX2xvYWQocHJvcG9zYWxfZmlsZSwge30pIG9yIHt9CgogICAgc2lnID0gY2FuZC5nZXQoInNpZ25hdHVyZSIpIG9yICIiCiAgICBydW5zID0gaW50KGNhbmQuZ2V0KCJyZWN1cnJlbmNlX3J1bnMiKSBvciAwKQogICAgcnVuX2lkcyA9IGNhbmQuZ2V0KCJydW5faWRzIiwgW10pCiAgICBiYWRfcmVmID0gY2FuZC5nZXQoImZpeHR1cmVfYmFkX3JlZiIpCiAgICBnb29kX3JlZiA9IGNhbmQuZ2V0KCJmaXh0dXJlX2dvb2RfcmVmIikKCiAgICBkZXRfcmF3ID0gcHJvcC5nZXQoImRldGVybWluaXN0aWMiKQogICAgaXNfZGV0ID0gZGV0X3JhdyBpcyBUcnVlIG9yIChpc2luc3RhbmNlKGRldF9yYXcsIHN0cikgYW5kIGRldF9yYXcuc3RyaXAoKS5sb3dlcigpIGluIHsidHJ1ZSIsICJ5ZXMiLCAiZGV0ZXJtaW5pc3RpYyJ9KQogICAgcHJlZGljYXRlID0gcHJvcC5nZXQoInByZWRpY2F0ZSIpIG9yIHByb3AuZ2V0KCJwcm9wb3NlZF9wcmVkaWNhdGUiKQogICAgdGhyZXNob2xkID0gcHJvcC5nZXQoInRocmVzaG9sZCIpCgogICAgIyAtLS0tIGRldGVybWluaXN0aWMgdmVyZGljdHMgKG1pbi1ub3QtbWVhbikgLS0tLQogICAgYzFfcGFzcyA9IHJ1bnMgPj0gbmVlZAogICAgYzJfcGFzcyA9IGJvb2woaXNfZGV0IGFuZCBwcmVkaWNhdGUpCiAgICBjNV9wYXNzID0gYm9vbChiYWRfcmVmIGFuZCBnb29kX3JlZikKCiAgICBpZiBub3Qgc2lnIG9yIHN0cihjYW5kLmdldCgiaGFzX2NhbmRpZGF0ZSIpKSA9PSAiZmFsc2UiOgogICAgICAgIHN0YXR1cyA9ICJub19jYW5kaWRhdGUiCiAgICBlbGlmIG5vdCBjMV9wYXNzOgogICAgICAgIHN0YXR1cyA9ICJiZWxvd19yZWN1cnJlbmNlIgogICAgZWxpZiBub3QgYzJfcGFzczoKICAgICAgICBzdGF0dXMgPSAiZXhlbXBsYXJfb25seSIKICAgIGVsaWYgbm90IGM1X3Bhc3M6CiAgICAgICAgc3RhdHVzID0gIm1pc3NpbmdfZml4dHVyZXMiCiAgICBlbHNlOgogICAgICAgIHN0YXR1cyA9ICJyZWFkeV9mb3JfcmF0aWZpY2F0aW9uIgoKICAgIHByb3Bvc2FsID0gewogICAgICAgICJzaWduYXR1cmUiOiBzaWcsCiAgICAgICAgInJlY3VycmVuY2VfcnVucyI6IHJ1bnMsCiAgICAgICAgInJ1bl9pZHMiOiBydW5faWRzLAogICAgICAgICJwZW5hbGlzZWRfZGltIjogY2FuZC5nZXQoInBlbmFsaXNlZF9kaW0iKSwKICAgICAgICAicHJvcG9zZWRfcHJlZGljYXRlIjogcHJlZGljYXRlIGlmIGlzX2RldCBlbHNlIE5vbmUsCiAgICAgICAgInRocmVzaG9sZCI6IHRocmVzaG9sZCBpZiBpc19kZXQgZWxzZSBOb25lLAogICAgICAgICJtZWFzdXJlbWVudCI6IHByb3AuZ2V0KCJtZWFzdXJlbWVudCIpIGlmIGlzX2RldCBlbHNlIE5vbmUsCiAgICAgICAgInJ1YnJpY19jcml0ZXJpb25fdG9fcmV0aXJlIjogcHJvcC5nZXQoInJ1YnJpY19jcml0ZXJpb25fdG9fcmV0aXJlIikgb3Igc2lnLAogICAgICAgICJmaXh0dXJlX2JhZF9yZWYiOiBiYWRfcmVmLAogICAgICAgICJmaXh0dXJlX2dvb2RfcmVmIjogZ29vZF9yZWYsCiAgICAgICAgInJ1YnJpY192ZXJzaW9uX2J1bXAiOiBwcm9wLmdldCgicnVicmljX3ZlcnNpb25fYnVtcCIpIG9yICJtaW5vciAoZHJvcCByZXRpcmVkIGNyaXRlcmlvbikiLAogICAgICAgICJzdGF0dXMiOiBzdGF0dXMsCiAgICAgICAgInJhdGlmaWVkIjogRmFsc2UsCiAgICAgICAgInRzIjogZGF0ZXRpbWUubm93KHRpbWV6b25lLnV0YykuaXNvZm9ybWF0KCksCiAgICAgICAgImNyaXRlcmlhIjogewogICAgICAgICAgICAicmVjdXJyZW5jZSI6IHsKICAgICAgICAgICAgICAgICJyZXF1aXJlZF9ydW5zIjogbmVlZCwgIm9ic2VydmVkX3J1bnMiOiBydW5zLAogICAgICAgICAgICAgICAgInJ1bl9pZHMiOiBydW5faWRzLCAicGFzcyI6IGMxX3Bhc3MsCiAgICAgICAgICAgIH0sCiAgICAgICAgICAgICJkZXRlcm1pbmlzbSI6IHsKICAgICAgICAgICAgICAgICJwYXNzIjogYzJfcGFzcywKICAgICAgICAgICAgICAgICJub3RlIjogKGYicHJlZGljYXRlOiB7cHJlZGljYXRlfTsgdGhyZXNob2xkOiB7dGhyZXNob2xkfSIgaWYgYzJfcGFzcwogICAgICAgICAgICAgICAgICAgICAgICAgZWxzZSAibm90IGV4cHJlc3NpYmxlIGFzIGEgbWVhc3VyYWJsZSBwcmVkaWNhdGUg4oCUIHByb21vdGVzIHRvIGFuICIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIkVYRU1QTEFSIG9ubHksIHN0YXlzIGEgSnVkZ2UgY3JpdGVyaW9uICjCpzYuMikuIiksCiAgICAgICAgICAgIH0sCiAgICAgICAgICAgICJleGVtcGxhcl9wcmVjaXNpb24iOiB7CiAgICAgICAgICAgICAgICAicGFzcyI6IE5vbmUsCiAgICAgICAgICAgICAgICAibm90ZSI6ICJERUZFUlJFRDogdmVyaWZ5aW5nIHplcm8gZmFsc2UgcG9zaXRpdmVzIG9uIHRoZSBiYXItY2xlYXJpbmcgIgogICAgICAgICAgICAgICAgICAgICAgICAiZXhlbXBsYXIgYmFuayByZXF1aXJlcyB0aGUgcHJlZGljYXRlIHRvIGV4aXN0IGFzIGNvZGU7IHRoaXMgcmVjaXBlICIKICAgICAgICAgICAgICAgICAgICAgICAgImRvZXMgbm90IGdlbmVyYXRlIGxpbnQgY29kZS4gRml4dHVyZSBwYWlyIG5hbWVkIGZvciB0aGUgYnVpbGRlci4iLAogICAgICAgICAgICB9LAogICAgICAgICAgICAiaHVtYW5fcmF0aWZpY2F0aW9uIjogewogICAgICAgICAgICAgICAgInBhc3MiOiBOb25lLAogICAgICAgICAgICAgICAgIm5vdGUiOiAidGhlIHN0YWdlZCBhcHByb3ZhbCBnYXRlID0gUFItbWVyZ2UgYW5hbG9nICjCpzYuNCk7IHBlbmRpbmcgdW50aWwgbWVyZ2VkLiIsCiAgICAgICAgICAgIH0sCiAgICAgICAgICAgICJyZWdyZXNzaW9uX3Rlc3QiOiB7CiAgICAgICAgICAgICAgICAicGFzcyI6IGM1X3Bhc3MsCiAgICAgICAgICAgICAgICAibm90ZSI6IChmImJhZD17YmFkX3JlZn0gOyBnb29kPXtnb29kX3JlZn0iIGlmIGM1X3Bhc3MKICAgICAgICAgICAgICAgICAgICAgICAgIGVsc2UgIm5vIG5hbWVhYmxlIGtub3duLWJhZC9rbm93bi1nb29kIHBhaXIg4oCUIGNhbm5vdCBzaGlwIGEgIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAicmVncmVzc2lvbiB0ZXN0ICjCpzYuNSkuIiksCiAgICAgICAgICAgIH0sCiAgICAgICAgfSwKICAgIH0KICAgIHByb3Bvc2FsWyJtYXJrZG93biJdID0gX2RyYWZ0X21hcmtkb3duKHByb3Bvc2FsKQogICAgX2R1bXAocHJvcG9zYWwsIG91dF9maWxlKQogICAgcHJpbnQoanNvbi5kdW1wcyh7CiAgICAgICAgInN0YXR1cyI6IHN0YXR1cywKICAgICAgICAic2lnbmF0dXJlIjogc2lnLAogICAgICAgICJyZWN1cnJlbmNlX3J1bnMiOiBydW5zLAogICAgICAgICJyZWFkeSI6ICJ0cnVlIiBpZiBzdGF0dXMgPT0gInJlYWR5X2Zvcl9yYXRpZmljYXRpb24iIGVsc2UgImZhbHNlIiwKICAgIH0pKQoKCmRlZiBlbWl0KGdhdGVfZmlsZSwgd29ya19kaXIsIHJhdGlmaWVkKToKICAgICIiIldyaXRlIHRoZSAob3B0aW9uYWxseSByYXRpZmllZCkgcHJvbW90aW9uIHByb3Bvc2FsIGFzIG1hcmtkb3duICsgSlNPTi4KCiAgICBBbHdheXMgd3JpdGVzIGFuIGFydGlmYWN0IOKAlCBldmVuIGZvciBiZWxvd19yZWN1cnJlbmNlIC8gZXhlbXBsYXJfb25seSDigJQgYmVjYXVzZQogICAgcmVjb3JkaW5nIFdIWSBub3RoaW5nIHdhcyBwcm9tb3RlZCBpcyBwYXJ0IG9mIHRoZSBob25lc3QgZ292ZXJuYW5jZSB0cmFpbCAowqc3KS4KICAgIGByYXRpZmllZGAgcmVmbGVjdHMgdGhlIGh1bWFuIGFwcHJvdmFsLWdhdGUgZGVjaXNpb24gKHRoZSBQUi1tZXJnZSBhbmFsb2cpLgogICAgIiIiCiAgICBwID0gX2xvYWQoZ2F0ZV9maWxlLCB7fSkgb3Ige30KICAgIGlzX3JhdGlmaWVkID0gc3RyKHJhdGlmaWVkKS5zdHJpcCgpLmxvd2VyKCkgaW4geyJ0cnVlIiwgInllcyIsICIxIiwgIm1lcmdlIiwgImFwcHJvdmUiLCAiYXBwcm92ZWQifQogICAgcHJvbW90YWJsZSA9IHAuZ2V0KCJzdGF0dXMiKSA9PSAicmVhZHlfZm9yX3JhdGlmaWNhdGlvbiIKICAgIHBbInJhdGlmaWVkIl0gPSBib29sKGlzX3JhdGlmaWVkIGFuZCBwcm9tb3RhYmxlKQogICAgcFsicmF0aWZpZWRfdHMiXSA9IGRhdGV0aW1lLm5vdyh0aW1lem9uZS51dGMpLmlzb2Zvcm1hdCgpIGlmIHBbInJhdGlmaWVkIl0gZWxzZSBOb25lCiAgICAjIGh1bWFuX3JhdGlmaWNhdGlvbiBjcml0ZXJpb24gbm93IHJlc29sdmVkCiAgICBjcml0ID0gcC5nZXQoImNyaXRlcmlhIiwge30pCiAgICBpZiAiaHVtYW5fcmF0aWZpY2F0aW9uIiBpbiBjcml0OgogICAgICAgIGNyaXRbImh1bWFuX3JhdGlmaWNhdGlvbiJdWyJwYXNzIl0gPSBUcnVlIGlmIHBbInJhdGlmaWVkIl0gZWxzZSAoRmFsc2UgaWYgcHJvbW90YWJsZSBlbHNlIE5vbmUpCiAgICBtZCA9IF9kcmFmdF9tYXJrZG93bihwKQogICAgcFsibWFya2Rvd24iXSA9IG1kCgogICAgbWRfcGF0aCA9IHdvcmtfZGlyLnJzdHJpcCgiLyIpICsgIi9wcm9tb3Rpb24tcHJvcG9zYWwubWQiCiAgICBqc29uX3BhdGggPSB3b3JrX2Rpci5yc3RyaXAoIi8iKSArICIvcHJvbW90aW9uLXByb3Bvc2FsLmpzb24iCiAgICB3aXRoIG9wZW4obWRfcGF0aCwgInciLCBlbmNvZGluZz0idXRmLTgiKSBhcyBmOgogICAgICAgIGYud3JpdGUobWQpCiAgICBwX25vX21kID0gZGljdChwKQogICAgcF9ub19tZC5wb3AoIm1hcmtkb3duIiwgTm9uZSkKICAgIF9kdW1wKHBfbm9fbWQsIGpzb25fcGF0aCkKCiAgICBwcmludChqc29uLmR1bXBzKHsKICAgICAgICAic3RhdHVzIjogcC5nZXQoInN0YXR1cyIpLAogICAgICAgICJyYXRpZmllZCI6IHBbInJhdGlmaWVkIl0sCiAgICAgICAgInNpZ25hdHVyZSI6IHAuZ2V0KCJzaWduYXR1cmUiLCAiIiksCiAgICAgICAgInJlY3VycmVuY2VfcnVucyI6IHAuZ2V0KCJyZWN1cnJlbmNlX3J1bnMiLCAwKSwKICAgICAgICAicHJvcG9zZWRfcHJlZGljYXRlIjogcC5nZXQoInByb3Bvc2VkX3ByZWRpY2F0ZSIpLAogICAgICAgICJmaXh0dXJlX2JhZF9yZWYiOiBwLmdldCgiZml4dHVyZV9iYWRfcmVmIiksCiAgICAgICAgImZpeHR1cmVfZ29vZF9yZWYiOiBwLmdldCgiZml4dHVyZV9nb29kX3JlZiIpLAogICAgICAgICJwcm9wb3NhbF9tZF9wYXRoIjogbWRfcGF0aCwKICAgICAgICAicHJvcG9zYWxfanNvbl9wYXRoIjoganNvbl9wYXRoLAogICAgfSkpCgoKZGVmIGdldChwYXRoLCBrZXksIGRlZmF1bHQ9IiIpOgogICAgIiIiUHJpbnQgdGhlIFJBVyBzY2FsYXIgdmFsdWUgb2Ygb25lIGZpZWxkIG9mIGEgSlNPTiBmaWxlIChmb3IgYmFzaCAkKC4uLikgY2FwdHVyZSkuIiIiCiAgICB2ID0gKF9sb2FkKHBhdGgsIHt9KSBvciB7fSkuZ2V0KGtleSwgZGVmYXVsdCkKICAgIHByaW50KHYgaWYgaXNpbnN0YW5jZSh2LCBzdHIpIGVsc2UganNvbi5kdW1wcyh2KSkKCgpfQ09NTUFORFMgPSB7CiAgICAiZXh0cmFjdCI6IGV4dHJhY3QsCiAgICAibWluZSI6IG1pbmUsCiAgICAiY2FuZGlkYXRlIjogY2FuZGlkYXRlLAogICAgImdhdGUiOiBnYXRlLAogICAgImVtaXQiOiBlbWl0LAogICAgImdldCI6IGdldCwKfQoKCmRlZiBtYWluKCk6CiAgICBpZiBsZW4oc3lzLmFyZ3YpIDwgMiBvciBzeXMuYXJndlsxXSBub3QgaW4gX0NPTU1BTkRTOgogICAgICAgIHByaW50KCJudWxsIik7IHJldHVybgogICAgX0NPTU1BTkRTW3N5cy5hcmd2WzFdXSgqc3lzLmFyZ3ZbMjpdKQoKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICBtYWluKCkK' | base64 -d > "$W/hev.py"
+          amplifier tool invoke design_ledger op=query task_class="{{task_class}}" --output json ${B:+--bundle "$B"} > "$W/_q.txt" 2>/dev/null || true
+          python3 "$W/hev.py" extract "$W/_q.txt" > "$W/records.json"
+          amplifier tool invoke design_ledger op=best task_class="{{task_class}}" --output json ${B:+--bundle "$B"} > "$W/_b.txt" 2>/dev/null || true
+          python3 "$W/hev.py" extract "$W/_b.txt" > "$W/best_record.json"
+          python3 "$W/hev.py" mine "$W/records.json" "{{low_threshold}}" "{{min_runs}}" "$W/candidates.json"
+        output: mine
+        parse_json: true
+
+      # 2. select the top candidate; bind known-bad (triggering) + known-good (best) refs.
+      - id: select-candidate
+        type: bash
+        command: |
+          set -uo pipefail
+          W="{{work_dir}}"
+          python3 "$W/hev.py" candidate "$W/candidates.json" "$W/best_record.json" "$W/candidate.json"
+        output: candidate
+        parse_json: true
+
+  # ===========================================================================
+  # STAGE 2 — GATE: deterministic five-criteria gate + ONE agent PROPOSE step,
+  #           then the HUMAN RATIFICATION approval gate (§6.4 = PR-merge analog).
+  # ===========================================================================
+  - name: gate
+    steps:
+      # 3. PROPOSE (the ONLY LLM step) — criterion §6.2: is the recurring catch
+      #    expressible as a concrete MEASURABLE predicate? Or is it irreducibly
+      #    subjective (-> exemplar only, never a lint)? Skipped if nothing recurred.
+      - id: propose-predicate
+        type: agent
+        condition: "{{candidate.has_candidate}} == 'true'"
+        agent: "foundation:zen-architect"
+        mode: "ANALYZE"   # a reasoning-class judgment; uses the session's configured provider
+        prompt: |
+          You are proposing whether a recurring design-quality Judge catch can be
+          DEMOTED from subjective judgment to a DETERMINISTIC lint. This is the
+          determinism criterion of the promotion gate (HARNESS_DESIGN.md §6.2).
+
+          Read the candidate the harness mined from the cross-run ledger:
+            {{work_dir}}/candidate.json
+
+          It contains: the `signature` (the join key for the recurring catch), the
+          `penalised_dim` (the quality the Judge keeps scoring low), and
+          `worst_examples` (the triggering records, each with its 8-dim scores).
+
+          Decide ONE of:
+          (a) DETERMINISTIC — the catch can be expressed as a concrete, measurable
+              predicate over an artifact/render that a Playwright-style lint
+              (`tool-design-lints`) could compute, with a numeric threshold. Examples:
+              "primary CTA foreground/background contrast ratio < 4.5 (WCAG AA)";
+              "primary CTA not reachable in keyboard tab order (focus_reachable=false)";
+              "viewport overflow on first paint". The predicate must be objective and
+              un-gameable — NOT a restatement of the subjective quality.
+          (b) NOT-DETERMINISTIC — the catch is irreducibly a matter of taste
+              (e.g. "character", "point") and cannot be reduced to a measurable
+              predicate. It may only graduate to a few-shot EXEMPLAR, never a lint.
+
+          Write a SINGLE JSON object to {{work_dir}}/proposal.json and return it:
+            For (a):
+              {"deterministic": true,
+               "predicate": "<one measurable sentence>",
+               "threshold": "<concrete numeric/boolean threshold>",
+               "measurement": "<how a lint would measure it, ideally naming an existing
+                                tool-design-lints field>",
+               "rubric_criterion_to_retire": "<the rubric criterion this lint makes redundant>",
+               "rubric_version_bump": "<e.g. 'minor: drop <criterion> from <dim> rubric'>"}
+            For (b):
+              {"deterministic": false,
+               "rationale": "<why this stays a judgment / exemplar>"}
+
+          Do NOT write any lint code, test, or rubric file — only this proposal JSON.
+          Be honest: a false 'deterministic' that a lint cannot actually compute is
+          worse than an honest 'not-deterministic'.
+        output: proposal
+        parse_json: true
+
+      # 4. ASSEMBLE the gate (deterministic): apply the five §6 criteria over the
+      #    candidate + the PROPOSE output. Writes gate.json AND a DRAFT proposal
+      #    (ratified=false) the human can open on disk during the approval gate.
+      #    Reads proposal.json from disk (NOT a template var) so a skipped PROPOSE
+      #    step degrades cleanly to "not-deterministic" -> exemplar_only.
+      - id: assemble-gate
+        type: bash
+        command: |
+          set -uo pipefail
+          W="{{work_dir}}"
+          [ -f "$W/proposal.json" ] || echo '{"deterministic": false, "rationale": "no candidate / PROPOSE step skipped"}' > "$W/proposal.json"
+          python3 "$W/hev.py" gate "$W/candidate.json" "$W/proposal.json" "{{min_runs}}" "$W/gate.json" > "$W/gate_summary.json"
+          python3 "$W/hev.py" emit "$W/gate.json" "$W" false > /dev/null
+          cat "$W/gate_summary.json"
+        output: gate
+        parse_json: true
+    approval:
+      required: true
+      prompt: |
+        RATIFY A HARNESS MUTATION (the slow clock — HARNESS_DESIGN.md §6/§7).
+
+        This is the rare, permanent, high-stakes checkpoint: every promotion alters
+        what the harness ACCEPTS forever. Same min-not-mean discipline as the loop.
+
+          task_class      : {{task_class}}
+          signature       : {{candidate.signature}}
+          penalised dim   : {{candidate.penalised_dim}}
+          recurrence      : {{candidate.recurrence_runs}} distinct runs (need >= {{min_runs}})
+          GATE VERDICT    : {{gate.status}}
+
+        Full PR-draft proposal (open it before deciding):
+          {{work_dir}}/promotion-proposal.md
+          {{work_dir}}/promotion-proposal.json
+
+        Verdict meanings:
+          ready_for_ratification — criteria 1,2,5 hold deterministically; exemplar-
+            precision (3) is DEFERRED to the builder (needs the predicate as code).
+            APPROVE = ratify this promotion (a follow-up build lands the lint +
+            regression test + rubric bump as a PR). DENY = discard.
+          exemplar_only — the catch is not expressible as a measurable predicate
+            (§6.2 fails); it can only become a few-shot exemplar, NOT a lint.
+            APPROVE merely RECORDS that determination; nothing is promoted.
+          below_recurrence / no_candidate — nothing graduated. APPROVE to record.
+
+        APPROVE to record the determination (and ratify it iff the verdict is
+        ready_for_ratification). DENY to abort and emit nothing.
+      timeout: 0
+      default: "deny"
+
+  # ===========================================================================
+  # STAGE 3 — EMIT: write the (ratified) promotion proposal — the PR-draft body.
+  # ===========================================================================
+  - name: emit
+    steps:
+      # 5. EMIT — stamp ratified (iff promotable; emit refuses otherwise) and write
+      #    the final markdown + JSON proposal. Reaching this stage == human approved.
+      - id: emit-proposal
+        type: bash
+        command: |
+          set -uo pipefail
+          W="{{work_dir}}"
+          python3 "$W/hev.py" emit "$W/gate.json" "$W" "{{ratify_decision}}"
+        output: final_output
+        parse_json: true
