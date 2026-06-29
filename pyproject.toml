@@ -1,3 +1,21 @@
+# This repo is an Amplifier bundle, not a Python package — its installable code
+# lives in each modules/*/pyproject.toml. This root file exists ONLY to host the
+# pytest configuration that spans those modules. The [build-system]/[project]/
+# [tool.setuptools] block below makes `uv pip install -e .` (run by the Amplifier
+# bundle installer when a root pyproject is present) a valid no-op: an empty
+# editable package. Without it, setuptools flat-layout auto-discovery sees
+# agents/, modules/, fixtures/, tests/ and refuses to build.
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "amplifier-bundle-design-loop"
+version = "0.0.0"
+
+[tool.setuptools]
+packages = []
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 addopts = "--import-mode=importlib"
