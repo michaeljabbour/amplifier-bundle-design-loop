@@ -114,4 +114,4 @@ the two clocks.
 ![The two-clock metaharness](docs/design-loop-metaharness.png)
 
 The C-signal: escalation-rate per run falls while quality holds, and judge-tokens per
-run fall. Full spec in `docs/HARNESS_DESIGN.md` (forthcoming).
+run fall. Full spec in [`docs/HARNESS_DESIGN.md`](docs/HARNESS_DESIGN.md).
