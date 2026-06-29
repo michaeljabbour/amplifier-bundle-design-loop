@@ -86,3 +86,17 @@ all reusing the same tools unchanged:
 - A `tool:post` hook that auto-judges every UI file as it's written.
 - A convergence loop: judge → revise → re-judge until the score clears a bar.
 - A deterministic slop detector as a fast pre-filter before the model scores.
+
+## Target architecture (the harness)
+
+The roadmap above converges on one shape: a **deterministic controller** wrapping a
+**judge ↔ maker loop**, where the thing that *scores* and the thing that *makes* are
+separate actors, an append-only **ledger** is the memory, and you are relocated to
+setting the bar once and handling only real escalations.
+
+![The design harness](docs/design-loop-harness.png)
+
+Validated with `amplifier:amplifier-expert` and `foundation:zen-architect`. The
+controller is realized by composition (a `recipes` convergence recipe for the greedy
+loop; the `attractor` `loop-pipeline` for beam/evolutionary width) — not a bespoke
+orchestrator. See the design notes in `docs/`.

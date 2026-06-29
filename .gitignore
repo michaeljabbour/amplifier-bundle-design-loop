@@ -12,6 +12,7 @@ build/
 
 # Generated artifacts
 *.png
+!docs/*.png
 *.jpg
 *.jpeg
 *.webp

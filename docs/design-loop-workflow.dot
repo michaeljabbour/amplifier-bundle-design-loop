@@ -1,59 +1,21 @@
-// How the design judge works — shows AI judgments vs automatic steps, and the loop.
-// Render: dot -Tpng -Gdpi=150 docs/design-loop-workflow.dot -o docs/design-loop-workflow.png
+// Plain-language workflow of the judge (today's single-pass shape). UTF-8 glyphs.
 digraph design_loop {
-  rankdir=LR;
-  bgcolor="white";
-  pad=0.45;
-  nodesep=0.5;
-  ranksep=0.8;
-  fontname="Helvetica";
-  labelloc="t";
-  fontsize=22;
-  fontcolor="#1A1A1A";
-  label=<<b>How the design judge works</b><br/><font point-size="13" color="#6B6357">Each pass should raise the score — repeat until it's good enough</font>>;
-
+  rankdir=LR; bgcolor="white"; pad=0.45; nodesep=0.5; ranksep=0.8;
+  fontname="Helvetica"; labelloc="t"; fontsize=22; fontcolor="#1A1A1A";
+  label=<<b>How the design judge works (today)</b><br/><font point-size="13" color="#6B6357">One pass — you decide whether to run it again</font>>;
   node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=13,
-        color="#D8D2C7", fillcolor="#F5F2EC", fontcolor="#1A1A1A",
-        margin="0.22,0.16", penwidth=1.2];
-  edge [color="#9A9182", penwidth=1.5, arrowsize=0.85, fontname="Helvetica",
-        fontsize=11, fontcolor="#6B6357"];
-
-  // Automatic (mechanical) steps — neutral
+        color="#D8D2C7", fillcolor="#F5F2EC", fontcolor="#1A1A1A", margin="0.22,0.16", penwidth=1.2];
+  edge [color="#9A9182", penwidth=1.5, arrowsize=0.85, fontname="Helvetica", fontsize=11, fontcolor="#6B6357"];
   share [label="You share a design\n(web page, link,\nor screenshot)", fillcolor="#ECE7DD"];
   pic1  [label="Takes a picture of it"];
-  pic2  [label="Takes a picture of the\nimproved version"];
-
-  // AI judgments — terracotta (these are the decisions the model makes)
-  score   [label="Decides a score for each\nof 8 qualities (0\u20134)", fillcolor="#F1DDD2", color="#C2613F"];
-  pick    [label="Decides which problems\nmatter most to fix", fillcolor="#F1DDD2", color="#C2613F"];
+  score [label="Decides a score for each\nof 8 qualities (0–4)", fillcolor="#F1DDD2", color="#C2613F"];
+  pick  [label="Decides which problems\nmatter most to fix", fillcolor="#F1DDD2", color="#C2613F"];
   rebuild [label="Redesigns it into\nan improved version", fillcolor="#F1DDD2", color="#C2613F"];
-
-  // What you get — teal
-  report [label="Hands you a report:\nscore \u00b7 fixes \u00b7 before \u2192 after",
-          fillcolor="#2F6F6A", fontcolor="white", color="#24544F"];
-
-  // The human/loop decision
+  pic2  [label="Takes a picture of the\nimproved version"];
+  report [label="Hands you a report:\nscore · fixes · before → after", fillcolor="#2F6F6A", fontcolor="white", color="#24544F"];
   check [shape=diamond, label="Good\nenough?", fillcolor="#FBF6EE", color="#C2613F", margin="0.05,0.02"];
   done  [label="Done", fillcolor="#E4ECE0", color="#7FA487"];
-
   share -> pic1 -> score -> pick -> rebuild -> pic2 -> report -> check;
   check -> done [label="yes"];
-  check -> pic1 [label="no \u2014 judge the\nimproved version", style=dashed,
-                 color="#C2613F", fontcolor="#C2613F", constraint=false];
-
-  // Honest note about today vs. next
-  note [shape=note, fillcolor="#FFFDF8", color="#D8D2C7", fontsize=11, fontcolor="#6B6357",
-        label="Today: you decide whether to run another pass.\nNext shape: it repeats on its own until the score clears a bar."];
-  report -> note [style=invis];
-  { rank=same; report; note; }
-
-  // Legend
-  subgraph cluster_legend {
-    label="";
-    style="rounded,filled"; fillcolor="#FBF9F4"; color="#E3DCCF"; margin=10;
-    lj [label="a judgment the AI makes", fillcolor="#F1DDD2", color="#C2613F", fontsize=11];
-    la [label="an automatic step", fillcolor="#F5F2EC", fontsize=11];
-    lr [label="what you get", fillcolor="#2F6F6A", fontcolor="white", color="#24544F", fontsize=11];
-    lj -> la -> lr [style=invis];
-  }
+  check -> pic1 [label="no — judge the\nimproved version", style=dashed, color="#C2613F", fontcolor="#C2613F", constraint=false];
 }
