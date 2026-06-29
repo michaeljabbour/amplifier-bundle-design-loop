@@ -70,3 +70,49 @@ python -m pytest tests/ -v
 # Integration tests that hit a real provider (run explicitly)
 python -m pytest tests/ -v -m manual
 ```
+
+## Running Manual Integration Tests
+
+The `@pytest.mark.manual` integration tests load `bundle.md` end-to-end using
+`amplifier_foundation`. Install it from GitHub before running them (it is **not**
+on PyPI under the bare name):
+
+```bash
+# Install amplifier-foundation for manual test support
+uv pip install "amplifier-foundation @ git+https://github.com/microsoft/amplifier-foundation@main"
+```
+
+Then run with:
+
+```bash
+RUN_MANUAL=1 uv run pytest tests/integration -m manual -v -s
+```
+
+Requirements:
+- `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` set in the environment
+- Chromium installed (`python -m playwright install chromium`)
+- `bundle.md` at the repo root and `agents/design-judge.md` present
+- Network access to resolve `amplifier-bundle-design-intelligence` during `prepare()`
+
+### Known constraint: `prepare()` and offline dev environments
+
+`bundle.md` includes `amplifier-bundle-design-intelligence@main`. During `prepare()`,
+`amplifier_foundation` activates each included bundle's Python package dependencies.
+The design-intelligence bundle pulls in the `amplifier` meta-package (from the local
+Amplifier cache), which depends on:
+
+```
+amplifier → amplifier-app-cli → amplifier-foundation
+```
+
+`amplifier-foundation` is **not on PyPI**; it only installs via git URL. When `prepare()`
+runs `uv pip install -e <cached-package> --no-sources` in the test venv, the solver
+cannot resolve `amplifier-foundation` and the install fails with:
+
+> No solution found when resolving dependencies: Because there are no versions of
+> amplifier-foundation…
+
+**Workaround (in progress):** The manual tests are correctly written to the real
+`amplifier_foundation` API. Running them end-to-end requires an Amplifier environment
+where the full dependency chain is pre-installed in the active venv (e.g. a uv-managed
+Amplifier tool venv, not a `uv run --with` ephemeral venv).

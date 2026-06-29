@@ -34,10 +34,13 @@ SLOP = REPO / "fixtures" / "slop.html"
 
 async def _judge(source: str | Path, kind: str) -> dict:
     """
-    Load the design-loop bundle, spawn the design-judge agent, and return the
-    parsed RESULT dict.
+    Load the design-loop bundle, run the design-judge agent as a direct session,
+    and return the parsed RESULT dict.
 
     Uses the real provider — no mocks, no stubs.
+
+    Real flow (amplifier_foundation examples/07_full_workflow.py):
+      bundle.compose(agent) → prepare() → create_session() → session.execute()
 
     Parameters
     ----------
@@ -54,30 +57,34 @@ async def _judge(source: str | Path, kind: str) -> dict:
     """
     from amplifier_foundation import load_bundle  # noqa: PLC0415
 
-    bundle = await load_bundle(REPO / "bundle.md")
-    prepared = await bundle.prepare()
-    agent = await load_bundle(REPO / "agents" / "design-judge.md")
+    bundle = await load_bundle(str(REPO / "bundle.md"))
+    agent = await load_bundle(str(REPO / "agents" / "design-judge.md"))
+    # Compose: agent's system instruction (design-judge.md body) overrides the bundle's
+    composed = bundle.compose(agent)
+    prepared = await composed.prepare()
 
-    result = await prepared.spawn(
-        child_bundle=agent,
-        instruction=(
-            f"Judge this artifact. source={source} kind={kind}. "
-            "Return only the RESULT JSON: "
-            '{"report_html_path", "total", "top_fixes", "target_html_path"}.'
-        ),
+    # create_session() builds the AmplifierSession with all tools mounted.
+    # session_cwd=REPO so tool path resolution is relative to the repo root.
+    session = await prepared.create_session(session_cwd=REPO)
+
+    instruction = (
+        f"Judge this artifact. source={source!s} kind={kind}. "
+        "Return only the RESULT JSON: "
+        '{"report_html_path": "...", "total": N, "top_fixes": [...], "target_html_path": "..."}.'
     )
 
-    output = result["output"]
-    if isinstance(output, str):
-        # Strip any markdown code fences before parsing
-        cleaned = output.strip()
-        if cleaned.startswith("```"):
-            lines = cleaned.splitlines()
-            # Drop first line (```json or ```) and last line (```)
-            cleaned = "\n".join(lines[1:-1]).strip()
-        return json.loads(cleaned)
-    # Already a dict (some orchestrators return structured output directly)
-    return output
+    async with session:
+        raw = await session.execute(instruction)
+
+    if isinstance(raw, dict):
+        return raw
+    # Strip any markdown code fences before parsing
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        # Drop first line (```json or ```) and last line (```)
+        cleaned = "\n".join(lines[1:-1]).strip()
+    return json.loads(cleaned)
 
 
 @pytest.mark.manual
