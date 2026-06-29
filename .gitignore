@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Build
+dist/
+build/
+
+# Generated artifacts
+*.png
+*.jpg
+*.jpeg
+*.webp
+/tmp_output/
+fixtures/*.png
+
+# OS
+.DS_Store

@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "manual: integration tests that hit a real provider; run explicitly, not in CI",
+]
