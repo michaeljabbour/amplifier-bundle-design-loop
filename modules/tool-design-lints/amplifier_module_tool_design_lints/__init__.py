@@ -68,7 +68,7 @@ class DesignLintsTool:
             "properties": {
                 "html": {
                     "type": "string",
-                    "description": "Raw HTML content to lint (inline string).",
+                    "description": "Raw HTML content to lint. Provide exactly ONE of html, html_path, or url.",
                 },
                 "html_path": {
                     "type": "string",
@@ -88,11 +88,6 @@ class DesignLintsTool:
                     "required": ["width", "height"],
                 },
             },
-            "oneOf": [
-                {"required": ["html"]},
-                {"required": ["html_path"]},
-                {"required": ["url"]},
-            ],
         }
 
     async def execute(self, input: dict[str, Any]) -> ToolResult:  # noqa: A002
