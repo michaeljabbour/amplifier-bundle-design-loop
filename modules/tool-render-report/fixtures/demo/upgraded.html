@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pulseboard — See what's actually happening.</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Lora:wght@400;500&family=Jost:wght@400;500;600&display=swap');
+
+    :root {
+      --ink:    #211d18;
+      --muted:  #6e6356;
+      --paper:  #f8f4ec;
+      --panel:  #ffffff;
+      --line:   #e6ddcc;
+      --accent: #a8521f;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Lora', Georgia, serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .nav {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 36px 32px 0;
+    }
+    .wordmark {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-weight: 600;
+      font-size: 24px;
+      letter-spacing: -0.01em;
+    }
+    .wordmark em { font-style: italic; color: var(--accent); }
+    .nav-links {
+      font-family: 'Jost', sans-serif;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      display: flex;
+      gap: 28px;
+    }
+
+    .hero {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 90px 32px 80px;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 56px;
+      align-items: end;
+    }
+    .hero .eyebrow {
+      font-family: 'Jost', sans-serif;
+      font-weight: 500;
+      font-size: 11.5px;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 20px;
+    }
+    .hero h1 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-weight: 400;
+      font-size: 58px;
+      line-height: 1.08;
+      letter-spacing: -0.01em;
+      max-width: 13ch;
+    }
+    .hero h1 em { font-style: italic; color: var(--accent); }
+    .hero-side {
+      border-left: 1px solid var(--line);
+      padding-left: 32px;
+    }
+    .hero-side p {
+      font-size: 17px;
+      color: var(--muted);
+      margin-bottom: 28px;
+    }
+    .cta {
+      font-family: 'Jost', sans-serif;
+      font-weight: 500;
+      font-size: 14.5px;
+      color: var(--ink);
+      text-decoration: none;
+      border-bottom: 1.5px solid var(--accent);
+      padding-bottom: 3px;
+    }
+    .cta:hover { color: var(--accent); }
+
+    .proof {
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 22px 32px;
+      max-width: 1080px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 36px;
+      flex-wrap: wrap;
+    }
+    .proof .label {
+      font-family: 'Jost', sans-serif;
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .proof .names {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-style: italic;
+      font-size: 18px;
+      color: var(--muted);
+      display: flex;
+      gap: 30px;
+      flex-wrap: wrap;
+    }
+
+    .section {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 96px 32px;
+    }
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      gap: 18px;
+      margin-bottom: 56px;
+    }
+    .section-head .num {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 15px;
+      color: var(--accent);
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .section-head h2 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-weight: 400;
+      font-size: 34px;
+      letter-spacing: -0.01em;
+    }
+
+    .capability-row {
+      display: grid;
+      grid-template-columns: 0.7fr 1.3fr;
+      gap: 48px;
+      padding: 40px 0;
+      border-top: 1px solid var(--line);
+    }
+    .capability-row:first-of-type { border-top: none; padding-top: 0; }
+    .capability-row h3 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-weight: 600;
+      font-size: 26px;
+      color: var(--ink);
+    }
+    .capability-row p {
+      color: var(--muted);
+      font-size: 16px;
+      max-width: 58ch;
+    }
+
+    .quote {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      border-radius: 4px;
+      padding: 40px 44px;
+      margin-top: 96px;
+    }
+    .quote p {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-style: italic;
+      font-size: 26px;
+      line-height: 1.45;
+      color: var(--ink);
+      max-width: 36ch;
+    }
+    .quote .attr {
+      font-family: 'Jost', sans-serif;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-top: 18px;
+    }
+
+    .close {
+      text-align: center;
+      padding: 110px 32px 130px;
+      border-top: 1px solid var(--line);
+    }
+    .close .eyebrow {
+      font-family: 'Jost', sans-serif;
+      font-weight: 500;
+      font-size: 11.5px;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 18px;
+    }
+    .close h2 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-weight: 400;
+      font-size: 40px;
+      max-width: 18ch;
+      margin: 0 auto 28px;
+      line-height: 1.2;
+    }
+    .close .cta-solid {
+      display: inline-block;
+      font-family: 'Jost', sans-serif;
+      font-weight: 500;
+      font-size: 14.5px;
+      letter-spacing: 0.02em;
+      color: var(--paper);
+      background: var(--ink);
+      text-decoration: none;
+      padding: 14px 30px;
+      border-radius: 3px;
+    }
+
+    footer {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 32px;
+      font-family: 'Jost', sans-serif;
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="wordmark">Pulse<em>board</em></div>
+    <div class="nav-links">
+      <span>Product</span><span>Pricing</span><span>Docs</span><span>Sign in</span>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div>
+      <div class="eyebrow">Real-time analytics</div>
+      <h1>See what's actually <em>happening</em> right now.</h1>
+    </div>
+    <div class="hero-side">
+      <p>Pulseboard turns raw event streams into a single, readable picture &mdash; the kind your team checks before a decision, not after one.</p>
+      <a href="#" class="cta">Start reading your data &rarr;</a>
+    </div>
+  </section>
+
+  <div class="proof">
+    <span class="label">In use at</span>
+    <div class="names"><span>Acme</span><span>Globex</span><span>Initech</span><span>Umbrella</span><span>Stark</span></div>
+  </div>
+
+  <section class="section">
+    <div class="section-head"><span class="num">1</span><h2>Three things it does well</h2></div>
+
+    <div class="capability-row">
+      <h3>Find the signal</h3>
+      <p>Pulseboard surfaces the handful of metrics that actually moved today, ranked by how much they matter &mdash; not by how recently they changed.</p>
+    </div>
+    <div class="capability-row">
+      <h3>Query without waiting</h3>
+      <p>Every dashboard renders against live data with sub-second latency, even across a year of history. No spinners, no stale exports.</p>
+    </div>
+    <div class="capability-row">
+      <h3>Keep the data honest</h3>
+      <p>Row-level permissions and a full audit trail mean the same dashboard tells the truth whether ten people are watching it or ten thousand.</p>
+    </div>
+
+    <div class="quote">
+      <p>&ldquo;We stopped exporting CSVs into a deck every Monday. Now we just look.&rdquo;</p>
+      <div class="attr">&mdash; Head of Operations, a Pulseboard customer</div>
+    </div>
+  </section>
+
+  <section class="close">
+    <div class="eyebrow">Ready when you are</div>
+    <h2>Bring your first data source in under five minutes.</h2>
+    <a href="#" class="cta-solid">Connect a data source</a>
+  </section>
+
+  <footer>
+    <span>&copy; 2026 Pulseboard, Inc.</span>
+    <span>Privacy &middot; Terms &middot; Status</span>
+  </footer>
+</body>
+</html>
