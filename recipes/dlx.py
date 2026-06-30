@@ -34,6 +34,12 @@ def _load(path, default=None):
         return default
 
 
+def _loaddict(path):
+    """Load a JSON file as a dict, fail-safe: any non-dict top-level value -> {}."""
+    d = _load(path, {})
+    return d if isinstance(d, dict) else {}
+
+
 def _ledger_len(W):
     return len(_load(W + "/ledger.json", []) or [])
 
@@ -88,7 +94,7 @@ def baserec(W, run, tc, sig, rv):
 
 def lintrec(W, run, tc, sig, rv):
     """Lint-reject record: scores stay null (honest stopping), no judge spent."""
-    lints = _load(W + "/lints.json", {}) or {}
+    lints = _loaddict(W + "/lints.json")
     fb = _load(W + "/fix_batch.json", []) or []
     reasons = lints.get("hard_fail_reasons") or ["hard_fail"]
     rec = {
@@ -161,7 +167,7 @@ def gateprep(W, prev_action):
         else:
             improvements.append(0.0)
     json.dump(improvements, open(W + "/improvements.json", "w", encoding="utf-8"))
-    res = _load(W + "/pass-live/result.json", {}) or {}
+    res = _loaddict(W + "/pass-live/result.json")
     print(json.dumps({
         "target_retried": "true" if prev_action == "ROLLBACK" else "false",
         "last_decision": res.get("decision", "NO_GAIN"),
@@ -170,18 +176,45 @@ def gateprep(W, prev_action):
 
 def field(path, key, default=""):
     """Print {key: value} JSON for one field of a JSON file (for parse_json capture)."""
-    print(json.dumps({key: (_load(path, {}) or {}).get(key, default)}))
+    print(json.dumps({key: _loaddict(path).get(key, default)}))
 
 
 def get(path, key, default=""):
     """Print the RAW scalar value of one field (for bash $(...) capture)."""
-    v = (_load(path, {}) or {}).get(key, default)
+    v = _loaddict(path).get(key, default)
     print(v if isinstance(v, str) else json.dumps(v))
+
+
+def normscores(path):
+    """Coerce a critic file at `path` to the flat 8-dim {dim:int} contract, in place.
+
+    The blind critic agent may emit EITHER a flat {dim:int} object OR a full
+    scorecard {scores:{...}, reasons:{...}, signatures:[...], total, ...}. The
+    controller (evaluate/gate), the ledger record `scores` field, and the planner
+    all expect the flat 8-dim dict. Normalise deterministically here rather than
+    depending on the LLM emitting the exact shape -- unwrap a nested `scores` dict
+    if present, then keep only the 8 known dims as ints. Idempotent. Fail-safe:
+    a missing/garbage file yields all-zero dims (honest, non-crashing).
+    """
+    d = _load(path)
+    if isinstance(d, dict) and isinstance(d.get("scores"), dict):
+        d = d["scores"]
+    if not isinstance(d, dict):
+        d = {}
+    flat = {}
+    for dim in DIMS:
+        try:
+            flat[dim] = int(d.get(dim, 0))
+        except (TypeError, ValueError):
+            flat[dim] = 0
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(flat, f)
+    print(json.dumps(flat))
 
 
 def gateout(W, br):
     """Normalise the controller gate result; fail-closed action = ESCALATE."""
-    g = _load(W + "/gate.json", {}) or {}
+    g = _loaddict(W + "/gate.json")
     print(json.dumps({
         "action": g.get("action", "ESCALATE"),
         "reason": g.get("reason", "gate_unavailable"),
@@ -200,14 +233,14 @@ def summary(W, action):
     """Final run summary: {report_path, best_scores, passes, final_action, escalation}."""
     best = _load(W + "/best_record.json")
     best_scores = best.get("scores") if isinstance(best, dict) else None
-    rep = _load(W + "/report.json", {}) or {}
+    rep = _loaddict(W + "/report.json")
     try:
         passes = int(open(W + "/passes.txt", encoding="utf-8").read().strip() or "0")
     except Exception:
         passes = 0
     escalation = None
     if action == "ESCALATE":
-        g = _load(W + "/gate.json", {}) or {}
+        g = _loaddict(W + "/gate.json")
         escalation = {"reason": g.get("reason", "unknown")}
     print(json.dumps({
         "report_path": rep.get("report_html_path", W + "/report.html"),
@@ -221,6 +254,7 @@ _COMMANDS = {
     "lintrec": lintrec, "passrec": passrec, "result": result,
     "lintresult": lintresult, "gateprep": gateprep, "verdict": verdict,
     "summary": summary, "field": field, "get": get, "gateout": gateout,
+    "normscores": normscores,
 }
 
 
