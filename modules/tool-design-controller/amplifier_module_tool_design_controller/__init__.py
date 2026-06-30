@@ -159,6 +159,7 @@ def _gate(
     epsilon: float,
     last_decision: str,
     target_retried: bool,
+    champion_is_baseline: bool = False,
 ) -> dict[str, str]:
     """Stopping-rule gate: decide what the recipe loop should do next.
 
@@ -192,6 +193,12 @@ def _gate(
         Most recent evaluate() decision string.
     target_retried:
         Whether a rollback has already been attempted for the current regression.
+    champion_is_baseline:
+        True when the current champion is still the untouched pass-0 baseline
+        (no scored pass has been promoted to NEW_BEST yet).  When True, Rule 3
+        (floor_breach) is suppressed so the loop keeps trying rather than
+        escalating immediately on a slop input whose baseline was always below
+        floor.  Default False preserves backward-compatible behaviour.
 
     Returns
     -------
@@ -216,13 +223,37 @@ def _gate(
     if budget_remaining <= 0:
         return {"action": "DONE", "reason": "budget_exhausted"}
 
-    # Rule 3: floor breach
-    if best_scores is not None:
+    # Rule 3: floor breach — only escalate if a scored candidate has been tried
+    # (champion_is_baseline=True means we haven't produced a real scored pass yet;
+    # escalating immediately would short-circuit the loop before it even starts
+    # climbing, since the pass-0 baseline on a slop input is always below floor).
+    #
+    # F2 guard: when the run has ALREADY met the total bar but one dim is still
+    # sub-floor AND the run is still improving (not plateaued) AND budget remains,
+    # do NOT escalate — the loop should spend the remaining budget lifting that dim.
+    # Only escalate floor_breach once the run is genuinely stalled (plateaued).
+    # For runs that have NOT yet met the bar, the old behaviour is preserved.
+    if best_scores is not None and not champion_is_baseline:
         breach = any(
             best_scores.get(dim, 0) < floor_dict.get(dim, 0) for dim in DIMS
         )
         if breach:
-            return {"action": "ESCALATE", "reason": "floor_breach"}
+            total_score = sum(best_scores.values())
+            is_plateaued = (
+                k > 0
+                and len(recent_improvements) >= k
+                and all(imp < epsilon for imp in recent_improvements[-k:])
+            )
+            # Suppress floor_breach escalation only when:
+            #   * total already meets the bar (one stubborn dim, not globally behind)
+            #   * run is still improving (not plateaued)
+            #   * budget remains to keep climbing
+            # In all other breach cases (total < bar, or plateaued, or budget 0),
+            # escalate immediately as before.
+            if total_score >= bar and not is_plateaued and budget_remaining > 0:
+                pass  # fall through — keep spending budget on the sub-floor dim
+            else:
+                return {"action": "ESCALATE", "reason": "floor_breach"}
 
     # Rule 4: plateau (last k improvements all below epsilon)
     if k > 0 and len(recent_improvements) >= k:
@@ -453,6 +484,8 @@ class DesignControllerTool:
             dict(best_scores_raw) if best_scores_raw is not None else None
         )
 
+        champion_is_baseline: bool = bool(input.get("champion_is_baseline", False))
+
         result = _gate(
             best_scores=best_scores,
             bar=int(input["bar"]),
@@ -463,6 +496,7 @@ class DesignControllerTool:
             epsilon=float(input["epsilon"]),
             last_decision=str(input["last_decision"]),
             target_retried=bool(input["target_retried"]),
+            champion_is_baseline=champion_is_baseline,
         )
         return ToolResult(success=True, output=result)
 

@@ -80,16 +80,24 @@ async def test_not_done_when_total_below_bar(tool):
 
 @pytest.mark.asyncio
 async def test_not_done_when_floor_not_met_despite_bar(tool):
-    """total >= bar but a dim is below floor → floor_breach fires, not bar_met."""
+    """total >= bar but a dim is still below floor, run is improving, budget remains.
+
+    F2 behaviour: when total >= bar but one dim < floor AND the run is NOT
+    plateaued AND budget remains, floor_breach must NOT escalate — the loop
+    should keep climbing to lift the sub-floor dim.  Returns PLAN.
+    """
     best = {d: 3 for d in DIMS}
-    best["clarity"] = 2   # below floor=3; total drops to 23
+    best["clarity"] = 2   # below floor=3; total = 7*3+2 = 23 >= bar=22
     result = await tool.execute(gate_kwargs(
         best_scores=best, bar=22, floors=3, budget_remaining=5,
     ))
-    # total=23 >= bar=22, but clarity=2 < floor=3 → floor_breach ESCALATE
+    # total=23 >= bar=22, clarity=2 < floor=3, NOT plateaued (len=2 < k=3),
+    # budget remaining → F2: keep climbing, do NOT escalate
     assert result.success is True
-    assert result.output["action"] == "ESCALATE"
-    assert result.output["reason"] == "floor_breach"
+    assert result.output["action"] == "PLAN", (
+        f"F2: expected PLAN but got action={result.output['action']!r}, "
+        f"reason={result.output.get('reason')!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -331,3 +339,121 @@ async def test_gate_missing_required_field(tool):
     result = await tool.execute({"op": "gate"})  # missing everything
     assert result.success is False
     assert result.error is not None
+
+
+# ---------------------------------------------------------------------------
+# champion_is_baseline guard (floor_breach suppression)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_floor_breach_not_escalated_while_champion_is_baseline(tool):
+    """floor breach + budget remaining + champion_is_baseline=True
+    -> loop has NOT yet scored a real candidate; must NOT escalate.
+    The gate should return the normal continue action (PLAN), not ESCALATE floor_breach.
+    """
+    best = make_scores()  # all 2s — below floor=3, total=16 < bar=24
+    result = await tool.execute(gate_kwargs(
+        best_scores=best,
+        floors=3,           # every dim breaches floor (2 < 3)
+        budget_remaining=5,
+        champion_is_baseline=True,
+    ))
+    assert result.success is True
+    # floor_breach must NOT fire while the champion is still the pass-0 baseline
+    assert not (
+        result.output["action"] == "ESCALATE"
+        and result.output["reason"] == "floor_breach"
+    ), (
+        f"floor_breach fired on a baseline champion (action={result.output['action']!r}, "
+        f"reason={result.output.get('reason')!r}); expected PLAN/continue"
+    )
+    # The gate has budget left and no other rule fires, so it should PLAN
+    assert result.output["action"] == "PLAN"
+
+
+@pytest.mark.asyncio
+async def test_floor_breach_escalates_when_scored_champion_below_floor(tool):
+    """floor breach + budget remaining + champion_is_baseline=False
+    -> a real scored pass has become champion and it is still below floor.
+    Must ESCALATE floor_breach (we genuinely tried and are stuck).
+    """
+    best = make_scores()  # all 2s — below floor=3
+    result = await tool.execute(gate_kwargs(
+        best_scores=best,
+        floors=3,
+        budget_remaining=5,
+        champion_is_baseline=False,
+    ))
+    assert result.success is True
+    assert result.output["action"] == "ESCALATE"
+    assert result.output["reason"] == "floor_breach"
+
+
+# ---------------------------------------------------------------------------
+# F2: floor_breach ordering — keep climbing vs escalate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_f2_floor_breach_plan_when_total_meets_bar_and_improving(tool):
+    """F2 Case 1: total >= bar, one dim < floor, budget remaining, NOT plateaued,
+    champion_is_baseline=False  →  PLAN (keep lifting the stuck dim), NOT ESCALATE.
+
+    The run has already hit the bar in total but one dimension is still sub-floor.
+    While budget remains and the run is still improving (not plateaued), floor_breach
+    should NOT escalate — it should spend the remaining budget trying to lift the dim.
+    """
+    best = {d: 3 for d in DIMS}
+    best["clarity"] = 2          # clarity=2 < floor=3; total = 7*3+2 = 23 >= bar=22
+    result = await tool.execute(gate_kwargs(
+        best_scores=best,
+        bar=22,                  # total=23 meets bar
+        floors=3,                # floor breach on clarity
+        budget_remaining=5,
+        recent_improvements=[0.5, 0.5],  # len=2 < k=3 → NOT plateaued
+        k=3,
+        epsilon=0.1,
+        champion_is_baseline=False,
+        last_decision="NEW_BEST",
+        target_retried=False,
+    ))
+    assert result.success is True
+    assert result.output["action"] == "PLAN", (
+        f"F2: expected PLAN (keep climbing) but got "
+        f"action={result.output['action']!r}, reason={result.output.get('reason')!r}. "
+        f"When total>=bar but one dim is sub-floor and the run is still improving, "
+        f"floor_breach must NOT escalate — use remaining budget to lift the dim."
+    )
+
+
+@pytest.mark.asyncio
+async def test_f2_floor_breach_escalates_when_total_meets_bar_and_plateaued(tool):
+    """F2 Case 2: total >= bar, one dim < floor, AND plateaued  →  ESCALATE floor_breach.
+
+    Once the run has plateaued (k consecutive flat improvements), spending more budget
+    will not lift the sub-floor dim.  Escalation is appropriate.
+    """
+    best = {d: 3 for d in DIMS}
+    best["clarity"] = 2          # total=23 >= bar=22, clarity=2 < floor=3
+    result = await tool.execute(gate_kwargs(
+        best_scores=best,
+        bar=22,
+        floors=3,
+        budget_remaining=5,
+        recent_improvements=[0.01, 0.01, 0.01],  # all < epsilon → plateaued
+        k=3,
+        epsilon=0.1,
+        champion_is_baseline=False,
+        last_decision="NEW_BEST",
+        target_retried=False,
+    ))
+    assert result.success is True
+    assert result.output["action"] == "ESCALATE", (
+        f"F2: expected ESCALATE floor_breach but got "
+        f"action={result.output['action']!r}, reason={result.output.get('reason')!r}. "
+        f"When total>=bar, floor breach persists, AND the run is plateaued, escalation is correct."
+    )
+    assert result.output["reason"] == "floor_breach", (
+        f"reason should be 'floor_breach', got {result.output.get('reason')!r}"
+    )
