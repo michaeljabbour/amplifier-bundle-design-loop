@@ -1,0 +1,27 @@
+# Documentation of the Python dependencies this app/ package needs.
+# NOT used for installation directly -- the app runs inside the bundle
+# repo's existing .venv (which already has amplifier_core + the mounted
+# tool modules editable-installed). These three packages were installed
+# additively into that same .venv with:
+#
+#   cd ~/dev/amplifier-bundle-design-loop
+#   uv pip install --python .venv/bin/python fastapi "uvicorn[standard]" python-multipart
+#
+# If you prefer a fully isolated environment instead, `uv sync` against
+# this file from within app/ will resolve the same three dependencies.
+[project]
+name = "design-loop-app"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
