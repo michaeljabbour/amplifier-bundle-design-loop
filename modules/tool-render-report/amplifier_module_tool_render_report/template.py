@@ -505,21 +505,49 @@ _PW_DO_NEXT = {
 }
 
 
+# The bar a candidate must clear to "ship" (single source of truth for both
+# this report renderer and the app -- see ship_verdict()).
+SHIP_BAR = 26
+
+
+def ship_verdict(total: int, *, converged: bool, blockers: int = 0, bar: int = SHIP_BAR) -> str:
+    """Canonical ship/no-ship call -- the ONLY place this decision is made.
+
+    Both the app (app/results.py) and this report renderer import this
+    function so the same run can never show two different ship verdicts.
+
+    Precedence:
+        1. Any ground-truth blocker vetoes shipping outright, regardless of
+           score or convergence.
+        2. Otherwise, ship only once the run has converged AND cleared the
+           bar.
+        3. Anything else is honestly "not ready yet".
+    """
+    if blockers > 0:
+        return f"Not ready \u2014 {blockers} blocker{'s' if blockers != 1 else ''}"
+    if converged and total >= bar and blockers == 0:
+        return "Ready to ship"
+    return "Not ready yet"
+
+
 def _pw_band_for(total: int) -> dict:
-    """Direct port of Page_Worth.html bandFor() -- identical thresholds/colors/copy."""
+    """Direct port of Page_Worth.html bandFor() -- thresholds/colors/copy for the
+    QUALITY-TIER descriptor (Noise/Functional/Strong/Exemplary + its line). This
+    is a separate axis from the ship/no-ship call -- see ship_verdict() for that.
+    """
     if total <= 11:
-        return {"name": "Noise", "ready": "Don't ship yet",
+        return {"name": "Noise",
                  "line": "Rework the core before polishing.",
                  "c": "oklch(0.55 0.13 35)", "s": "oklch(0.55 0.13 35 / .13)"}
     if total <= 19:
-        return {"name": "Functional", "ready": "Ships, but forgettable",
+        return {"name": "Functional",
                  "line": "It works, but won't be remembered.",
                  "c": "oklch(0.62 0.12 65)", "s": "oklch(0.68 0.12 65 / .14)"}
     if total <= 26:
-        return {"name": "Strong", "ready": "Ship-ready",
+        return {"name": "Strong",
                  "line": "Real value \u2014 refine the weak spots.",
                  "c": "oklch(0.52 0.07 155)", "s": "oklch(0.58 0.07 155 / .14)"}
-    return {"name": "Exemplary", "ready": "Exemplary",
+    return {"name": "Exemplary",
              "line": "Ship it and learn in the open.",
              "c": "oklch(0.45 0.08 155)", "s": "oklch(0.45 0.08 155 / .16)"}
 
@@ -788,7 +816,9 @@ def _pw_radar_svg(layers: list) -> str:
     )
 
 
-def _pw_verdict_hero(a_scores: dict, b_scores: dict, verdict_text: str, sowhat: str | None) -> str:
+def _pw_verdict_hero(
+    a_scores: dict, b_scores: dict, verdict_text: str, sowhat: str | None, ship_phrase: str
+) -> str:
     """Direct port of execAB() -- left column (verdict prose + score transition) +
     right column (buildRadar of A dashed-gray vs B colored)."""
     tA = sum(v for v in a_scores.values() if isinstance(v, int))
@@ -809,7 +839,7 @@ def _pw_verdict_hero(a_scores: dict, b_scores: dict, verdict_text: str, sowhat: 
         + _pw_eyebrow("The revision", "var(--fg-accent)")
         + "<div style=\"font-family:var(--font-ui);font-weight:600;font-size:13px;"
           f"letter-spacing:.06em;text-transform:uppercase;color:{bB['c']};margin:10px 0 8px\">"
-          f"{_esc(bB['ready'])}</div>"
+          f"{_esc(ship_phrase)}</div>"
         + "<p style=\"margin:0;font-family:var(--font-display);font-weight:500;font-size:26px;"
           f"line-height:1.28;letter-spacing:-.01em;color:var(--fg-1)\">{_esc(verdict_text)}</p>"
         + sowhat_html
@@ -1472,7 +1502,18 @@ def render(
     change_notes = _pw_dim_change_notes(records)
     bB = _pw_band_for(champ_total)
 
-    hero = _pw_verdict_hero(a_scores, champ_scores, verdict_text, sowhat)
+    # Ship verdict: use the SAME canonical function the app uses so the two
+    # surfaces can never disagree for the same run. `state` may optionally
+    # carry "blockers"/"bar" (the app's payload does); default to 0/SHIP_BAR
+    # so standalone render() (the real recipe path, no app in front of it)
+    # keeps working exactly as before.
+    _blockers_val = state.get("blockers")
+    blockers = int(_blockers_val) if _blockers_val is not None else 0
+    _bar_val = state.get("bar")
+    bar = int(_bar_val) if _bar_val is not None else SHIP_BAR
+    ship_phrase = ship_verdict(champ_total, converged=converged, blockers=blockers, bar=bar)
+
+    hero = _pw_verdict_hero(a_scores, champ_scores, verdict_text, sowhat, ship_phrase)
     do_next_card = _pw_do_card("Do this next", do_next_text)
     sw_grid = (
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px">'

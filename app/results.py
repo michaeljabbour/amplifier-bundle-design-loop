@@ -14,14 +14,15 @@ from __future__ import annotations
 from typing import Any
 
 from amplifier_module_tool_render_report import template as t
+from amplifier_module_tool_render_report.template import SHIP_BAR, ship_verdict
 
 # Ordered dimension ids + human labels, straight from the report module so the
 # punch list and the full report never disagree.
 _ORDER: list[str] = [d["id"] for d in t.PW_DIMS]
 _LABEL: dict[str, str] = {d["id"]: d["label"] for d in t.PW_DIMS}
 
-# The bar a candidate must clear to "ship" (mirrors real_runner's default APS).
-_BAR = 26
+# The bar a candidate must clear to "ship" -- imported from the report
+# renderer (SHIP_BAR) so the app and the report can never disagree.
 
 # Fallback issue/fix per dimension, in a smart-friend voice, used when a run's
 # own fix_batch doesn't already carry a line for a weak dimension. Keeps the
@@ -272,20 +273,19 @@ def build_result_payload(
     total = int(total)
 
     # A senior lead won't sign off on a page with blocking accessibility fails,
-    # no matter how high the taste score is. Blockers veto "ship".
-    ship = converged and total >= _BAR and blockers == 0
+    # no matter how high the taste score is. Blockers veto "ship". ship_label
+    # comes from the SAME canonical function the report renderer uses, so this
+    # payload and the embedded report can never show two different verdicts
+    # for the same run.
+    ship_label = ship_verdict(total, converged=converged, blockers=blockers, bar=SHIP_BAR)
+    ship = ship_label == "Ready to ship"
     if blockers > 0:
-        ship_label = "Not ready yet"
         blocker_note = (
             f"{blockers} blocking ground-truth issue"
             + ("s" if blockers != 1 else "")
             + " must be fixed before this ships, regardless of the design score."
         )
-    elif ship:
-        ship_label = "Ready to ship"
-        blocker_note = ""
     else:
-        ship_label = "Not ready yet"
         blocker_note = ""
 
     goal_note = ""
