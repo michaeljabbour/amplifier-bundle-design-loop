@@ -303,7 +303,7 @@ def build_result_payload(
         "strengths_note": strengths_note,
         "root_cause": root_cause,
         "total": total,
-        "bar": _BAR,
+        "bar": SHIP_BAR,
         "ship": ship,
         "ship_label": ship_label,
         "blockers": blockers,

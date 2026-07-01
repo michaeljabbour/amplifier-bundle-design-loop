@@ -70,7 +70,7 @@ async def _register_streaming_hooks(coordinator: Any, hook: WebStreamingHook) ->
                 logger.warning("Failed to forward %s event", _evt, exc_info=True)
             return HookResult(action="continue")
 
-        coordinator.hooks.register(event_name, _handler)
+        coordinator.register(event_name, _handler)
 
     logger.info("Registered %d real-backend streaming hooks", len(STREAMING_EVENTS))
 
