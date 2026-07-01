@@ -80,6 +80,51 @@ async def health() -> dict[str, Any]:
     return {"status": "ok", "runs_dir": str(RUNS_DIR)}
 
 
+def _dry_mode() -> bool:
+    import os
+
+    return os.environ.get("DESIGN_LOOP_DRY", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+
+
+@app.get("/api/preflight")
+async def api_preflight() -> JSONResponse:
+    """Report which backend a run will use, so the UI can label the mode and so
+    a user opting into the real critique (DESIGN_LOOP_DRY=0) gets a clear signal
+    up front instead of a mid-run import error.
+
+    - dry_mode: scripted zero-cost transcript (still runs the REAL deterministic
+      ground-truth audit on the actual page).
+    - foundation_installed: whether `amplifier_foundation` can be imported (the
+      real subjective critic path).
+    """
+    import importlib.util
+
+    dry = _dry_mode()
+    foundation = importlib.util.find_spec("amplifier_foundation") is not None
+    if dry:
+        message = "DRY mode: scripted transcript, zero cost. Ground-truth audit is real."
+    elif foundation:
+        message = "LIVE mode: real critique via amplifier_foundation (spends tokens)."
+    else:
+        message = (
+            "LIVE mode requested but amplifier_foundation isn't installed -- runs "
+            "will error. Install it (see app/real_runner.py) or set DESIGN_LOOP_DRY=1."
+        )
+    return JSONResponse(
+        {
+            "dry_mode": dry,
+            "foundation_installed": foundation,
+            "real_available": (not dry) and foundation,
+            "mode": "dry" if dry else ("live" if foundation else "live-unavailable"),
+            "message": message,
+        }
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def landing() -> HTMLResponse:
     return HTMLResponse(build_landing_html())

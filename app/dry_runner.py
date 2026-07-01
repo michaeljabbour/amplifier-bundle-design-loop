@@ -72,6 +72,37 @@ _CHAMPION_SCORES = {
     "point": 3,
 }
 
+# ── Escalated variant scores ────────────────────────────────────────────────
+# The "escalated" transcript climbs a little but never clears the bar: the
+# best candidate plateaus in the high-teens and the loop gives up (budget /
+# plateau) instead of converging. Used to make the non-converged UI state
+# demoable without a real LLM run.
+_ESC_PASS2_SCORES = {
+    "clarity": 3,
+    "elegance": 2,
+    "restraint": 1,
+    "empowerment": 2,
+    "agency": 2,
+    "ease": 3,
+    "character": 1,
+    "point": 2,
+}
+_ESC_CHAMPION_SCORES = {
+    "clarity": 3,
+    "elegance": 2,
+    "restraint": 2,
+    "empowerment": 2,
+    "agency": 2,
+    "ease": 3,
+    "character": 2,
+    "point": 2,
+}
+
+# Successive dry runs alternate converged -> escalated -> converged ... so a
+# demo can show both terminal states without any UI knob (per product choice
+# "auto-alternate per run"). Module-level: survives per server process.
+_RUN_COUNTER = {"n": 0}
+
 
 def _source_display(kind: str, source: str) -> str:
     """A short, honest string to show in the log for this run's source.
@@ -100,7 +131,7 @@ async def _pass(
     step_delay: float,
 ) -> None:
     await hook.display(
-        f"Pass {pass_no}: spawning design-loop:design-maker ({maker_label})",
+        f"Pass {pass_no}/{_TOTAL_PASSES}: spawning design-loop:design-maker ({maker_label})",
         source="maker",
     )
     await asyncio.sleep(step_delay)
@@ -125,24 +156,83 @@ async def _pass(
     await asyncio.sleep(step_delay * 0.4)
 
 
-def _build_dry_state() -> dict[str, Any]:
+def _build_dry_state(run_id: str, variant: str) -> dict[str, Any]:
+    """Build the scripted run `state` for the render step.
+
+    `run_id` is stamped onto records[0] so the report renderer reuses the
+    app's own run_id (instead of falling back to ``<task_class>_<ts>``). With
+    the web app's out_dir == durable run dir, that reconciles every artifact,
+    the history entry, and the WS result under a SINGLE id/dir.
+
+    `variant` selects the terminal state: "converged" (champion clears the
+    bar, DONE/bar_met) or "escalated" (champion plateaus below the bar, the
+    loop gives up).
+    """
+    baseline_rec = {
+        "pass": 0,
+        "run_id": run_id,
+        "task_class": "landing-page-critique",
+        "decision": "BASELINE",
+        "outcome": "accepted",
+        "scores": _BASELINE_SCORES,
+        "fix_batch": [
+            {
+                "criterion": "restraint",
+                "issue": "Three identical feature cards padded out with generic copy and emoji bullets.",
+                "fix": "Cut to the three claims that are actually true and differentiating.",
+            }
+        ],
+        "lint_results": {"hard_fail": False, "hard_fail_reasons": []},
+        "artifact_ref": str(_SLOP),
+    }
+
+    if variant == "escalated":
+        records = [
+            baseline_rec,
+            {
+                "pass": 1,
+                "decision": "NEW_BEST",
+                "outcome": "accepted",
+                "scores": _ESC_PASS2_SCORES,
+                "fix_batch": [
+                    {
+                        "criterion": "elegance",
+                        "issue": "Tightened spacing and type scale, but the layout is still three equal cards.",
+                        "fix": "A real improvement needs structure, not just polish.",
+                    }
+                ],
+                "lint_results": {"hard_fail": False, "hard_fail_reasons": []},
+                "artifact_ref": str(_UPGRADED),
+            },
+            {
+                "pass": 2,
+                "decision": "NO_GAIN",
+                "outcome": "rejected",
+                "scores": _ESC_CHAMPION_SCORES,
+                "fix_batch": [
+                    {
+                        "criterion": "character",
+                        "issue": "Third attempt reshuffled the same components without a point of view.",
+                        "fix": "Escalate to a human: the loop can't find a differentiating direction.",
+                    }
+                ],
+                "lint_results": {"hard_fail": False, "hard_fail_reasons": []},
+                "artifact_ref": str(_UPGRADED),
+            },
+        ]
+        return {
+            "records": records,
+            "gate": {"action": "ESCALATE", "reason": "plateau"},
+            "champion": {
+                "scores": _ESC_CHAMPION_SCORES,
+                "total": sum(_ESC_CHAMPION_SCORES.values()),
+                "artifact_ref": str(_UPGRADED),
+            },
+            "converged": False,
+        }
+
     records = [
-        {
-            "pass": 0,
-            "task_class": "landing-page-critique",
-            "decision": "BASELINE",
-            "outcome": "accepted",
-            "scores": _BASELINE_SCORES,
-            "fix_batch": [
-                {
-                    "criterion": "restraint",
-                    "issue": "Three identical feature cards padded out with generic copy and emoji bullets.",
-                    "fix": "Cut to the three claims that are actually true and differentiating.",
-                }
-            ],
-            "lint_results": {"hard_fail": False, "hard_fail_reasons": []},
-            "artifact_ref": str(_SLOP),
-        },
+        baseline_rec,
         {
             "pass": 1,
             "decision": "NO_GAIN",
@@ -186,6 +276,52 @@ def _build_dry_state() -> dict[str, Any]:
     }
 
 
+def _pick_variant(explicit: str | None) -> str:
+    """Choose which scripted transcript to run.
+
+    An explicit "converged"/"escalated" (e.g. from a re-run that wants to
+    reproduce a state) wins. Otherwise successive runs auto-alternate so a
+    demo can show both terminal states with no UI knob.
+    """
+    if explicit in ("converged", "escalated"):
+        return explicit
+    n = _RUN_COUNTER["n"]
+    _RUN_COUNTER["n"] = n + 1
+    return "converged" if n % 2 == 0 else "escalated"
+
+
+# Total scripted passes -- surfaced in each "Pass N/TOTAL" line so the client
+# can render a determinate progress bar without hard-coding the denominator.
+_TOTAL_PASSES = 3
+
+
+def _apply_focus(state: dict[str, Any], focus: str | None) -> None:
+    """A focused re-run ('fix restraint') should visibly move THAT dimension.
+
+    Bumps the champion's focused-dimension score (and mirrors it onto the
+    winning record) so the score delta and scorecard reflect the steer. No-op
+    if `focus` isn't one of the eight criteria.
+    """
+    from .results import _LABEL  # local import: avoids a hard dep at import time
+
+    if not focus or focus not in _LABEL:
+        return
+    champ = state.get("champion") or {}
+    scores = dict(champ.get("scores") or {})
+    if not scores:
+        return
+    scores[focus] = min(4, int(scores.get(focus, 0)) + 1)
+    champ["scores"] = scores
+    champ["total"] = sum(v for v in scores.values() if isinstance(v, int))
+    state["champion"] = champ
+    for rec in reversed(state.get("records") or []):
+        if rec.get("decision") in ("NEW_BEST", "BASELINE"):
+            rec_scores = dict(rec.get("scores") or {})
+            rec_scores[focus] = scores[focus]
+            rec["scores"] = rec_scores
+            break
+
+
 async def run_dry(
     run_id: str,
     out_dir: pathlib.Path,
@@ -193,6 +329,11 @@ async def run_dry(
     *,
     kind: str = "image",
     source: str = "",
+    variant: str | None = None,
+    context: str = "",
+    audience: str = "",
+    focus: str | None = None,
+    compare_url: str = "",
 ) -> dict[str, Any]:
     """Run the scripted dry-mode transcript and render the report trio.
 
@@ -200,6 +341,9 @@ async def run_dry(
     ONLY to make the first log line honestly reflect what was submitted --
     the scripted scores/records themselves are unaffected, since dry mode
     never actually looks at the input.
+
+    `variant` ("converged"/"escalated"/None) selects the terminal state; None
+    auto-alternates per run so both outcomes are demoable.
 
     Returns the render() result dict (upgraded_html/report_html/baseline_html
     absolute paths on disk, plus durable_* variants) with `total`, `converged`,
@@ -209,14 +353,53 @@ async def run_dry(
     if not _SLOP.exists() or not _UPGRADED.exists():
         raise RuntimeError(f"demo fixtures missing under {_FIXTURES}")
 
+    chosen = _pick_variant(variant)
+
     label = _KIND_LABELS.get(kind, kind)
     display_value = _source_display(kind, source)
+    goal = " ".join((context or "").split())[:80]
     intake_msg = (
-        f"Received {label} {display_value} \u2014 classified as {kind}; "
-        "starting governed design loop (DRY MODE -- no LLM calls)"
+        f"Received {label} {display_value} \u2014 classified as {kind}"
+        + (f'; goal: "{goal}"' if goal else "")
+        + "; starting governed design loop (DRY MODE -- no LLM calls)"
     )
     await hook.display(intake_msg, source="upload")
     await asyncio.sleep(0.3)
+    if focus:
+        await hook.display(
+            f"Focusing this run on: {focus}", source="loop"
+        )
+        await asyncio.sleep(0.15)
+
+    # Ground-truth audit on the ACTUAL input (deterministic, no LLM) -- the
+    # objective half of a senior review, run before any subjective scoring.
+    from .audit import run_audit
+
+    html_text = None
+    if kind == "html":
+        hp = out_dir / "input.html"
+        if hp.exists():
+            try:
+                html_text = hp.read_text(encoding="utf-8")
+            except Exception:
+                html_text = None
+    audit = await run_audit(
+        kind=kind, html=html_text, url=(source if kind == "url" else None)
+    )
+    if audit.get("available"):
+        s = audit["summary"]
+        await hook.tool_pre("design_lints", {"op": "ground_truth"})
+        await hook.tool_post(
+            "design_lints",
+            success=(s.get("fail", 0) == 0),
+            summary=f"{s.get('pass',0)} pass / {s.get('warn',0)} warn / {s.get('fail',0)} fail",
+        )
+        await hook.display(
+            f"GROUND-TRUTH: {s.get('pass',0)} pass, {s.get('warn',0)} warn, {s.get('fail',0)} fail "
+            "(accessibility & hygiene, checked on your real markup)",
+            source="lints",
+        )
+        await asyncio.sleep(0.2)
 
     await _pass(
         hook,
@@ -228,43 +411,105 @@ async def run_dry(
         gate_text="BASELINE -> continue",
         step_delay=0.45,
     )
-    await _pass(
-        hook,
-        pass_no=2,
-        maker_label="produced revised candidate",
-        lint_ok=True,
-        lint_reason="PASS",
-        critic_text="scored 10/32 -- worst: restraint 0/4",
-        gate_text="NO_GAIN -> PLAN (regression on restraint, retry from best-so-far)",
-        step_delay=0.45,
-    )
-    await _pass(
-        hook,
-        pass_no=3,
-        maker_label="produced revised candidate",
-        lint_ok=True,
-        lint_reason="PASS",
-        critic_text="scored 29/32 -- worst: agency 3/4",
-        gate_text="NEW_BEST -> DONE (bar_met)",
-        step_delay=0.45,
-    )
+
+    if chosen == "escalated":
+        await _pass(
+            hook,
+            pass_no=2,
+            maker_label="produced revised candidate",
+            lint_ok=True,
+            lint_reason="PASS",
+            critic_text="scored 17/32 -- worst: restraint 1/4",
+            gate_text="NEW_BEST -> PLAN (small gain, keep climbing)",
+            step_delay=0.45,
+        )
+        await _pass(
+            hook,
+            pass_no=3,
+            maker_label="produced revised candidate",
+            lint_ok=True,
+            lint_reason="PASS",
+            critic_text="scored 18/32 -- worst: character 2/4",
+            gate_text="NO_GAIN -> ESCALATE (plateau below bar 26, human needed)",
+            step_delay=0.45,
+        )
+        final_msg = (
+            "Escalated: best candidate plateaued at 18/32, below the bar of 26 "
+            "(plateau). Handing off to a human. Report ready."
+        )
+    else:
+        await _pass(
+            hook,
+            pass_no=2,
+            maker_label="produced revised candidate",
+            lint_ok=True,
+            lint_reason="PASS",
+            critic_text="scored 10/32 -- worst: restraint 0/4",
+            gate_text="NO_GAIN -> PLAN (regression on restraint, retry from best-so-far)",
+            step_delay=0.45,
+        )
+        await _pass(
+            hook,
+            pass_no=3,
+            maker_label="produced revised candidate",
+            lint_ok=True,
+            lint_reason="PASS",
+            critic_text="scored 29/32 -- worst: agency 3/4",
+            gate_text="NEW_BEST -> DONE (bar_met)",
+            step_delay=0.45,
+        )
+        final_msg = "Converged: champion scored 29/32 (bar_met). Report ready."
 
     await hook.tool_pre("render_report", {"run_id": run_id})
-    state = _build_dry_state()
+    state = _build_dry_state(run_id, chosen)
+    _apply_focus(state, focus)
     # durable_base set (was None) so every dry run also appends a
     # history.jsonl entry under ~/Downloads/design-loop, exactly like a real
-    # design-converge.yaml run's render_report finalize step would.
+    # design-converge.yaml run's render_report finalize step would. Because
+    # out_dir already lives under durable_base/runs/<run_id> and records[0]
+    # carries that same run_id, render() writes ONE directory (no second copy).
     result = await asyncio.to_thread(
         rr_template.render, state, out_dir=str(out_dir), durable_base=str(_DURABLE_ROOT)
     )
     await hook.tool_post(
         "render_report", success=True, summary="wrote baseline/upgraded/report.html"
     )
-    await hook.display(
-        "Converged: champion scored 29/32 (bar_met). Report ready.", source="gate"
+    await hook.display(final_msg, source="gate")
+
+    from .results import build_result_payload
+
+    payload = build_result_payload(
+        state, context=context, audience=audience, audit=audit
     )
 
-    result["total"] = state["champion"]["total"]
+    # Benchmark: same deterministic audit on a competitor URL (objective only).
+    if compare_url:
+        their = await run_audit(kind="url", url=compare_url)
+        payload["benchmark"] = {
+            "url": compare_url,
+            "available": bool(their.get("available")),
+            "you": audit.get("summary", {}) if audit.get("available") else {},
+            "them": their.get("summary", {}),
+            "you_findings": audit.get("findings", []) if audit.get("available") else [],
+            "them_findings": their.get("findings", []),
+            "note": "Objective ground-truth checks only -- subjective scoring needs the full critique.",
+        }
+
+    # Annotate the user's ACTUAL page (html input) with redline markers.
+    if html_text:
+        try:
+            from .annotate import annotate_html
+
+            (out_dir / "annotated.html").write_text(
+                annotate_html(html_text), encoding="utf-8"
+            )
+            payload["has_annotated"] = True
+        except Exception:
+            payload["has_annotated"] = False
+
+    result["total"] = payload["total"]
     result["converged"] = state["converged"]
     result["reason"] = state["gate"].get("reason", "")
+    result["variant"] = chosen
+    result["payload"] = payload
     return result

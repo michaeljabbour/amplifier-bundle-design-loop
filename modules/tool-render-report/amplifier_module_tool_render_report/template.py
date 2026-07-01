@@ -1554,7 +1554,15 @@ def render(
     report_path.write_text(report_html, encoding="utf-8")
 
     # \u2500\u2500 4. Copy trio to durable run dir \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    if _durable_run_dir is not None:
+    # When the caller already renders straight into the durable run dir (i.e.
+    # out_dir *is* durable_base/runs/<run_id> -- the web app's reconciled
+    # single-id layout), the trio is already in place. Skip the copy so we
+    # don't raise SameFileError copying a file onto itself, and so a run
+    # produces exactly ONE directory rather than two.
+    if (
+        _durable_run_dir is not None
+        and _durable_run_dir.resolve() != out_dir_p.resolve()
+    ):
         _durable_run_dir.mkdir(parents=True, exist_ok=True)
         _shutil.copy2(str(upgraded_path), str(_durable_run_dir / "upgraded.html"))
         _shutil.copy2(str(report_path), str(_durable_run_dir / "report.html"))

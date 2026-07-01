@@ -6,6 +6,7 @@ amplifier-app-bundlewizard-web's ws_handler.py routes prompt/approval_response.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -85,10 +86,29 @@ async def _run_start(
     meta = _read_meta(run_dir)
     kind = meta.get("kind", "image")
     meta_source = meta.get("source", "")
+    opts = options if isinstance(options, dict) else {}
+    variant = opts.get("variant")
+    focus = opts.get("focus")
+    # Goal context: prefer the per-run option, fall back to what /api/source
+    # captured on the run (so a re-run keeps the same goal).
+    context = opts.get("context") or meta.get("context") or ""
+    audience = opts.get("audience") or meta.get("audience") or ""
+    compare_url = opts.get("compare_url") or ""
 
     try:
         if _is_dry_mode():
-            result = await run_dry(run_id, run_dir, hook, kind=kind, source=meta_source)
+            result = await run_dry(
+                run_id,
+                run_dir,
+                hook,
+                kind=kind,
+                source=meta_source,
+                variant=variant,
+                context=context,
+                audience=audience,
+                focus=focus,
+                compare_url=compare_url,
+            )
         else:
             from .real_runner import run_real
 
@@ -108,11 +128,24 @@ async def _run_start(
                 "report_url": f"/runs/{run_id}/report.html",
                 "upgraded_url": f"/runs/{run_id}/upgraded.html",
                 "baseline_url": f"/runs/{run_id}/baseline.html",
+                "annotated_url": f"/runs/{run_id}/annotated.html",
                 "total": total,
                 "converged": converged,
                 "verdict": _verdict_label(converged, reason),
+                "variant": result.get("variant", ""),
+                "payload": result.get("payload", {}),
             }
         )
+    except asyncio.CancelledError:
+        # Client asked to stop (or disconnected). Tell them the run was
+        # cancelled -- best effort, the socket may already be gone -- then
+        # re-raise so the awaiting task unwinds cleanly.
+        logger.info("Run %s cancelled", run_id)
+        try:
+            await websocket.send_json({"type": "cancelled", "run_id": run_id})
+        except Exception:
+            pass
+        raise
     except Exception as exc:
         logger.error("Run %s failed: %s", run_id, exc, exc_info=True)
         try:
@@ -124,8 +157,16 @@ async def _run_start(
 
 
 async def handle_websocket(websocket: Any, runs_dir: pathlib.Path) -> None:
-    """Handle a single WebSocket connection lifecycle for one run."""
+    """Handle a single WebSocket connection lifecycle for one run.
+
+    The run executes as its own asyncio task so this loop can keep receiving
+    messages while it's in flight -- specifically a ``{"type": "cancel"}`` to
+    stop a running analysis (rough edge #4). If the socket drops mid-run, the
+    in-flight task is cancelled too, so a scripted transcript doesn't keep
+    sleeping after the client is gone.
+    """
     await websocket.accept()
+    run_task: asyncio.Task | None = None
     try:
         while True:
             msg: dict[str, Any] = await websocket.receive_json()
@@ -137,13 +178,41 @@ async def handle_websocket(websocket: Any, runs_dir: pathlib.Path) -> None:
                         {"type": "error", "message": "missing run_id"}
                     )
                     continue
+                if run_task is not None and not run_task.done():
+                    # A new run supersedes an in-flight one on the same socket.
+                    run_task.cancel()
+                    try:
+                        await run_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
                 options = (
                     msg.get("options") if isinstance(msg.get("options"), dict) else None
                 )
-                await _run_start(websocket, runs_dir, run_id, options)
+                run_task = asyncio.ensure_future(
+                    _run_start(websocket, runs_dir, run_id, options)
+                )
+            elif msg_type == "cancel":
+                if run_task is not None and not run_task.done():
+                    run_task.cancel()
+                    try:
+                        await run_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+                else:
+                    # Nothing running -- acknowledge so the client can reset.
+                    await websocket.send_json(
+                        {"type": "cancelled", "run_id": msg.get("run_id", "")}
+                    )
             else:
                 logger.warning("Received unknown message type: %s", msg_type)
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
     except Exception as exc:
         logger.warning("WebSocket handler error: %s", exc, exc_info=True)
+    finally:
+        if run_task is not None and not run_task.done():
+            run_task.cancel()
+            try:
+                await run_task
+            except (asyncio.CancelledError, Exception):
+                pass

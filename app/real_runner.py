@@ -200,4 +200,54 @@ async def run_real(
     render_result["total"] = total
     render_result["converged"] = converged
     render_result["reason"] = reason
+
+    # Same punch-list payload the dry runner produces, so the Results screen is
+    # identical whether the transcript was scripted or a real converge run.
+    from .audit import run_audit
+    from .results import build_result_payload
+
+    ctx = (options or {}).get("context", "") if options else ""
+    aud = (options or {}).get("audience", "") if options else ""
+    # Ground-truth audit on the real artifact: an on-disk html file or the URL.
+    html_text = None
+    if kind == "html" and pathlib.Path(source).exists():
+        try:
+            html_text = pathlib.Path(source).read_text(encoding="utf-8")
+        except Exception:
+            html_text = None
+    audit = await run_audit(
+        kind=kind, html=html_text, url=(source if kind == "url" else None)
+    )
+    payload = build_result_payload(
+        state if isinstance(state, dict) else {},
+        context=ctx,
+        audience=aud,
+        audit=audit,
+    )
+
+    cmp_url = (options or {}).get("compare_url", "") if options else ""
+    if cmp_url:
+        their = await run_audit(kind="url", url=cmp_url)
+        payload["benchmark"] = {
+            "url": cmp_url,
+            "available": bool(their.get("available")),
+            "you": audit.get("summary", {}) if audit.get("available") else {},
+            "them": their.get("summary", {}),
+            "you_findings": audit.get("findings", []) if audit.get("available") else [],
+            "them_findings": their.get("findings", []),
+            "note": "Objective ground-truth checks only -- subjective scoring needs the full critique.",
+        }
+    if html_text:
+        try:
+            from .annotate import annotate_html
+
+            (out_dir / "annotated.html").write_text(
+                annotate_html(html_text), encoding="utf-8"
+            )
+            payload["has_annotated"] = True
+        except Exception:
+            payload["has_annotated"] = False
+
+    render_result["payload"] = payload
+    render_result["variant"] = "converged" if converged else "escalated"
     return render_result
