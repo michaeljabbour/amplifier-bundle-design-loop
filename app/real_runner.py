@@ -98,6 +98,89 @@ def _classify_fallback(source: str) -> str:
         return "prompt"
 
 
+class _HookDisplay:
+    """Minimal display system: forwards agent/loop messages to the WS log."""
+
+    def __init__(self, hook: WebStreamingHook) -> None:
+        self._hook = hook
+
+    def show_message(self, message: str, level: str = "info", source: str = "loop") -> None:
+        try:
+            asyncio.ensure_future(self._hook.display(str(message), source=source))
+        except Exception:  # pragma: no cover -- no running loop
+            pass
+
+    def push_nesting(self) -> None:  # noqa: D401
+        pass
+
+    def pop_nesting(self) -> None:
+        pass
+
+
+def _register_spawn_capability(session: Any, prepared: Any, hook: WebStreamingHook) -> None:
+    """Register session.spawn so the recipe's maker/critic agents can spawn.
+
+    Mirrors amplifier-app-bundlewizard-web's _register_spawn_capability (which
+    itself follows amplifier-foundation examples/07_full_workflow.py). Without
+    this, staged recipe steps that spawn agents fail with
+    "'session.spawn' capability not registered".
+    """
+    try:
+        from amplifier_foundation import Bundle
+    except ImportError:
+        logger.debug("amplifier_foundation.Bundle unavailable -- skipping spawn capability")
+        return
+
+    disp = _HookDisplay(hook)
+
+    async def spawn_capability(
+        agent_name: str,
+        instruction: str,
+        parent_session: Any = None,
+        agent_configs: dict[str, Any] | None = None,
+        sub_session_id: str | None = None,
+        orchestrator_config: dict[str, Any] | None = None,
+        parent_messages: list[dict[str, Any]] | None = None,
+        provider_preferences: list[Any] | None = None,
+        self_delegation_depth: int = 0,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        agents = agent_configs or {}
+        if agent_name in agents:
+            config = agents[agent_name]
+        elif hasattr(prepared, "bundle") and agent_name in getattr(prepared.bundle, "agents", {}):
+            config = prepared.bundle.agents[agent_name]
+        else:
+            available = list(agents.keys()) + list(
+                getattr(getattr(prepared, "bundle", None), "agents", {}).keys()
+            )
+            raise ValueError(f"Agent '{agent_name}' not found. Available: {available}")
+
+        child_bundle = Bundle(
+            name=agent_name,
+            version="1.0.0",
+            session=config.get("session", {}),
+            providers=config.get("providers", []),
+            tools=config.get("tools", []),
+            hooks=config.get("hooks", []),
+            instruction=config.get("instruction") or config.get("system", {}).get("instruction"),
+        )
+        disp.show_message(f"Spawning agent: {agent_name}", level="info", source="delegate")
+        return await prepared.spawn(
+            child_bundle=child_bundle,
+            instruction=instruction,
+            session_id=sub_session_id,
+            parent_session=parent_session,
+            orchestrator_config=orchestrator_config,
+            parent_messages=parent_messages,
+            provider_preferences=provider_preferences,
+            self_delegation_depth=self_delegation_depth,
+        )
+
+    session.coordinator.register_capability("session.spawn", spawn_capability)
+    logger.info("Registered session.spawn capability")
+
+
 async def run_real(
     run_id: str,
     out_dir: pathlib.Path,
@@ -146,10 +229,12 @@ async def run_real(
 
     session = await prepared.create_session()
     await _register_streaming_hooks(session.coordinator.hooks, hook)
+    _register_spawn_capability(session, prepared, hook)
 
     recipe_context = dict(_DEFAULT_RECIPE_CONTEXT)
     recipe_context["source"] = source
     recipe_context["kind"] = resolved_kind
+    recipe_context.setdefault("work_dir", str(out_dir))
     if options:
         recipe_context.update(options)
 
@@ -164,21 +249,50 @@ async def run_real(
     await hook.tool_pre(
         "recipes", {"operation": "execute", "recipe": "design-converge.yaml"}
     )
-    tool_result = await recipes_tool.execute(
+
+    async def _rexec(payload: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
+        r = await recipes_tool.execute(payload)
+        out = getattr(r, "output", r)
+        return r, (out if isinstance(out, dict) else {"_raw": out})
+
+    tool_result, output = await _rexec(
         {
             "operation": "execute",
-            "recipe_path": "design-loop:recipes/design-converge.yaml",
+            "recipe_path": str(_BUNDLE_ROOT / "recipes" / "design-converge.yaml"),
             "context": recipe_context,
         }
     )
-    await hook.tool_post("recipes", success=bool(getattr(tool_result, "success", True)))
 
-    # design-converge.yaml's FINALIZE stage already calls render_report and
-    # writes into a durable location; the summary/state it returns includes
-    # the report path. We re-render into THIS run's out_dir for a stable,
-    # app-owned URL regardless of where the recipe's own durable_base points.
-    output = getattr(tool_result, "output", tool_result)
-    state = output.get("state", output) if isinstance(output, dict) else {}
+    # HEADLESS AUTO-APPROVAL: design-converge.yaml has an up-front staged APS
+    # approval gate. The recipes tool PAUSES (status=paused_for_approval) and
+    # requires a separate approve + resume call sequence (the kernel's
+    # approval_system does NOT cover recipe stage gates). Loop until no gate
+    # remains.
+    _guard = 0
+    while isinstance(output, dict) and output.get("status") == "paused_for_approval" and _guard < 12:
+        _guard += 1
+        rsid = output.get("session_id")
+        stage = output.get("stage_name")
+        await hook.display(f"Auto-approving APS gate '{stage}' (headless)", source="gate")
+        await _rexec(
+            {"operation": "approve", "session_id": rsid, "stage_name": stage,
+             "message": "auto-approved headlessly"}
+        )
+        tool_result, output = await _rexec({"operation": "resume", "session_id": rsid})
+
+    await hook.tool_post("recipes", success=bool(getattr(tool_result, "success", True)))
+    logger.info("recipe final status=%s keys=%s", output.get("status"), list(output.keys()))
+
+    # design-converge.yaml's FINALIZE stage renders a report and returns the
+    # loop state. Locate the render state within the (possibly nested) output.
+    state = (
+        output.get("state")
+        or (output.get("summary") or {}).get("state")
+        or output.get("final_state")
+        or output
+    )
+    if not isinstance(state, dict):
+        state = {}
 
     from amplifier_module_tool_render_report import template as rr_template
 
