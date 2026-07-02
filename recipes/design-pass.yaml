@@ -49,6 +49,7 @@ context:
   bundle_ref: ""             # passed to nested `inv amplifier tool invoke --bundle` (empty = auto-detect)
   tau: "0"                   # MACA regression tolerance
   prior_lint_reasons: ""     # deterministic lint failure reasons
+  brief: ""                  # OPTIONAL free-text design intent from the app UI; secondary to fix_batch directives -- the maker is intentionally rubric-blind
   INVOKE_TIMEOUT: 120      # per-tool-invoke hard timeout in seconds (anti-hang) from previous pass (rubric-free; "" = none)
 
 steps:
@@ -106,6 +107,7 @@ steps:
 
       Read the current design HTML at: {{working_head_path}}
       Apply ONLY the directives in:    {{pass_dir}}/fix_batch.json
+      Overall intent for this redesign (OPTIONAL — honor only if non-empty; the fix-batch directives take precedence): {{brief}}
 
       Produce a COMPLETE, SELF-CONTAINED, OFFLINE HTML document (inline all CSS; make
       NO external network requests — an outbound request is a hard lint failure).

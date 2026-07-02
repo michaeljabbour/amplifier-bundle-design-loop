@@ -81,7 +81,7 @@ _DEFAULT_RECIPE_CONTEXT: dict[str, Any] = {
     "task_class": "landing-page-critique",
     "bar": 26,
     "floors": 2,
-    "budget": 6,
+    "budget": 1,
     "epsilon": 1,
     "k": 3,
 }
@@ -105,6 +105,7 @@ _MAX_APPROVAL_ROUNDS = 12
 # The trailing `{"status": ..., "tool": ..., "result": ...}` block the CLI
 # prints as the LAST thing on stdout for `--output json` (human-readable
 # log lines -- module installs, etc. -- precede it).
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _ENVELOPE_RE = re.compile(r'\{\s*"status".*\}\s*\Z', re.S)
 
 
@@ -272,7 +273,7 @@ async def _run_cli(
             raw = await stream.readline()
             if not raw:
                 break
-            text = raw.decode("utf-8", errors="replace").rstrip("\n")
+            text = _ANSI_RE.sub("", raw.decode("utf-8", errors="replace")).rstrip()
             if capture:
                 stdout_lines.append(text)
             if stream_source and text.strip():
@@ -492,6 +493,7 @@ async def run_real(
     kind: str,
     source: str,
     options: dict[str, Any] | None = None,
+    goal: str = "",
 ) -> dict[str, Any]:
     """Execute recipes/design-converge.yaml as a real `amplifier` CLI
     subprocess, with cwd=out_dir for every call (see module docstring for
@@ -504,6 +506,13 @@ async def run_real(
     own INIT stage re-classifies from `source` itself; `kind` is passed
     through mainly for observability/debugging, not because the recipe
     templates it).
+
+    `goal` is an OPTIONAL free-text design intent captured on the Landing
+    page (e.g. "make a version for veterinary scientists"), persisted in
+    meta.json and forwarded here by ws_handler. It flows into the recipe as
+    context var `brief`, which design-pass.yaml's maker prompt treats as
+    secondary/best-effort -- the maker is intentionally rubric-blind, and an
+    empty goal (the default) must not change any existing behavior.
     """
     out_dir = pathlib.Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -518,6 +527,7 @@ async def run_real(
             "work_dir": str(out_dir),
             "bundle_ref": str(_BUNDLE_ROOT),
             "run_id": run_id,
+            "brief": goal or "",
         }
     )
     _apply_context_overrides(recipe_context, options)

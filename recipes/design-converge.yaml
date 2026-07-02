@@ -57,6 +57,7 @@ context:
   # --- the artifact + identity ---
   source: ""                 # Input to improve: HTML path, URL, image path, or prompt text (REQUIRED)
   source_path: ""            # DEPRECATED alias kept for backward compat; overridden by source when set
+  brief: ""                  # OPTIONAL free-text design intent from the app UI (e.g. "make a version for veterinary scientists"); secondary to the fix-batch directives -- the maker is intentionally rubric-blind
   task_class: "landing_page" # ledger partition key
   signature: "unsigned"      # join key
   run_id: "r-local"          # this run's id
@@ -232,6 +233,7 @@ stages:
               bundle_ref: "{{bundle_ref}}"
               tau: "{{tau}}"
               prior_lint_reasons: "{{prior_lint_reasons}}"
+              brief: "{{brief}}"
             output: pass_out
             parse_json: true
 

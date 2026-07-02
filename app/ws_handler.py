@@ -94,6 +94,11 @@ async def _run_start(
     context = opts.get("context") or meta.get("context") or ""
     audience = opts.get("audience") or meta.get("audience") or ""
     compare_url = opts.get("compare_url") or ""
+    # Optional design brief/goal captured at run-creation time (/api/upload or
+    # /api/source), persisted in meta.json -- NOT a per-run option like
+    # context/audience above. Empty by default; forwarded to the REAL runner
+    # only (DRY mode ignores it, preserving existing DRY behavior exactly).
+    goal = meta.get("goal", "") or ""
 
     try:
         if _is_dry_mode():
@@ -114,7 +119,13 @@ async def _run_start(
 
             real_source = _resolve_real_source(run_dir, kind, meta_source)
             result = await run_real(
-                run_id, run_dir, hook, kind=kind, source=real_source, options=options
+                run_id,
+                run_dir,
+                hook,
+                kind=kind,
+                source=real_source,
+                options=options,
+                goal=goal,
             )
 
         total = result.get("total")

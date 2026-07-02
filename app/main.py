@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, UploadFile, WebSocket
+from fastapi import FastAPI, Form, UploadFile, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -62,16 +62,21 @@ class SourceRequest(BaseModel):
 
     kind: str
     value: str
+    goal: str = ""  # optional free-text design intent (e.g. "make a version for veterinary scientists")
 
 
-def _write_meta(run_dir: Path, kind: str, source: str) -> None:
+def _write_meta(run_dir: Path, kind: str, source: str, goal: str = "") -> None:
     """Every run directory gets a meta.json describing what kind of input it is.
 
     ws_handler reads this to decide how to drive the (dry or real) runner and
     what to show in the first log line, without re-guessing from disk layout.
+
+    `goal` is an OPTIONAL free-text design intent captured from the Landing
+    page (e.g. "make a version for veterinary scientists"). Empty by default
+    -- an empty goal must not change any existing behavior.
     """
     (run_dir / "meta.json").write_text(
-        json.dumps({"kind": kind, "source": source}), encoding="utf-8"
+        json.dumps({"kind": kind, "source": source, "goal": goal or ""}), encoding="utf-8"
     )
 
 
@@ -131,7 +136,7 @@ async def landing() -> HTMLResponse:
 
 
 @app.post("/api/upload")
-async def api_upload(file: UploadFile) -> JSONResponse:
+async def api_upload(file: UploadFile, goal: str = Form("")) -> JSONResponse:
     """Save an uploaded screenshot -- or a pasted/dropped .html file -- to its
     own per-run directory.
 
@@ -167,7 +172,7 @@ async def api_upload(file: UploadFile) -> JSONResponse:
                 return JSONResponse({"error": "file too large"}, status_code=413)
             out.write(chunk)
 
-    _write_meta(run_dir, kind, file.filename or dest.name)
+    _write_meta(run_dir, kind, file.filename or dest.name, goal)
 
     logger.info(
         "Saved upload for run %s: %s (%d bytes, kind=%s)", run_id, dest, size, kind
@@ -202,7 +207,7 @@ async def api_source(body: SourceRequest) -> JSONResponse:
     else:  # prompt
         (run_dir / "source_brief.txt").write_text(value, encoding="utf-8")
 
-    _write_meta(run_dir, kind, value)
+    _write_meta(run_dir, kind, value, body.goal)
 
     logger.info("Created run %s from %s source", run_id, kind)
     return JSONResponse({"run_id": run_id, "kind": kind})

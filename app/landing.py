@@ -242,6 +242,11 @@ def _smart_input_section() -> str:
         '<div class="dl-hint">Enter to analyze a URL &middot; Cmd/Ctrl+Enter for HTML &middot; '
         "Cmd/Ctrl+V to paste a screenshot</div>"
         '<div class="dl-context-row">'
+        '<label for="dl-brief">Goal / Brief</label>'
+        '<input type="text" id="dl-brief" maxlength="300" '
+        'placeholder="Optional: e.g. make a version for veterinary scientists" />'
+        "</div>"
+        '<div class="dl-context-row">'
         '<label for="dl-context">Goal</label>'
         '<input type="text" id="dl-context" maxlength="120" '
         'placeholder="Optional: what is this page for? e.g. B2B pricing page, app download" />'
@@ -412,6 +417,7 @@ def _script() -> str:
         "var progBar=document.getElementById('dl-progress-bar');",
         "var progText=document.getElementById('dl-progress-text');",
         "var progPct=document.getElementById('dl-progress-pct');",
+        "var goalEl=document.getElementById('dl-brief');",
         "var contextEl=document.getElementById('dl-context');",
         "var audienceEl=document.getElementById('dl-audience');",
         "var compareEl=document.getElementById('dl-compare');",
@@ -829,12 +835,14 @@ def _script() -> str:
         "  pendingImage=file;showPreview(file);refreshDetect();",
         "  setStatus('Uploading '+(file.name||'screenshot')+'\\u2026',false);",
         "  var form=new FormData();form.append('file',file,file.name||'upload.png');",
+        "  form.append('goal',getGoal());",
         "  fetch('/api/upload',{method:'POST',body:form})",
         "    .then(function(res){if(!res.ok){throw new Error('upload failed: '+res.status);}return res.json();})",
         "    .then(function(data){setStatus('',false);startRun(data.run_id,baseOpts());})",
         "    .catch(function(err){setStatus(String(err),true);});",
         "}",
         "",
+        "function getGoal(){return goalEl?goalEl.value.trim():'';}",
         "function getContext(){return contextEl?contextEl.value.trim():'';}",
         "function getAudience(){return audienceEl?audienceEl.value.trim():'';}",
         "function getCompare(){return compareEl?compareEl.value.trim():'';}",
@@ -853,7 +861,7 @@ def _script() -> str:
         "function startFromSource(kind,value){",
         "  setStatus('Submitting\\u2026',false);",
         "  fetch('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},",
-        "    body:JSON.stringify({kind:kind,value:value})})",
+        "    body:JSON.stringify({kind:kind,value:value,goal:getGoal()})})",
         "    .then(function(res){if(!res.ok){throw new Error('request failed: '+res.status);}return res.json();})",
         "    .then(function(data){setStatus('',false);startRun(data.run_id,baseOpts());})",
         "    .catch(function(err){setStatus(String(err),true);});",
@@ -902,7 +910,7 @@ def _script() -> str:
         "  currentRunId=null;pendingImage=null;lastResult=null;currentOpts={};prevTotal=null;",
         "  logEl.innerHTML='';toolRows={};",
         "  preview.style.display='none';previewImg.src='';",
-        "  inputEl.value='';fileInput.value='';if(contextEl){contextEl.value='';}if(audienceEl){audienceEl.value='';}if(compareEl){compareEl.value='';}",
+        "  inputEl.value='';fileInput.value='';if(goalEl){goalEl.value='';}if(contextEl){contextEl.value='';}if(audienceEl){audienceEl.value='';}if(compareEl){compareEl.value='';}",
         "  refreshDetect();setStatus('',false);",
         "  progBar.className='dl-progress-bar';progBar.style.width='0%';",
         "  progText.textContent='Starting\\u2026';progPct.textContent='';",
