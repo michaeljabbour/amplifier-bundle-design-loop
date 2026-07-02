@@ -919,7 +919,7 @@ def _script() -> str:
         "  if(!badge){return;}",
         "  fetch('/api/preflight').then(function(r){return r.json();}).then(function(d){",
         "    badge.title=d.message||'';",
-        "    if(d.mode==='dry'){badge.className='dl-mode-badge dl-mode-dry';badge.textContent='\\u25cf DRY \\u00b7 free';}",
+        "    if(d.mode==='dry'){badge.className='dl-mode-badge dl-mode-dry';badge.textContent='\\u25cf DEMO \\u00b7 scripted (not a real analysis)';}",
         "    else if(d.mode==='live'){badge.className='dl-mode-badge dl-mode-live';badge.textContent='\\u25cf LIVE';}",
         "    else {badge.className='dl-mode-badge dl-mode-warn';badge.textContent='\\u26a0 LIVE \\u00b7 not installed';}",
         "  }).catch(function(){});",
