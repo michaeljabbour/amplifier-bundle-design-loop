@@ -1,0 +1,34 @@
+bundle:
+  name: design-loop-behavior
+  version: 0.2.0
+  namespace_root: ..
+  description: Design-loop tools, agents, and awareness composition.
+
+includes:
+  - bundle: git+https://github.com/microsoft/amplifier-bundle-design-intelligence@main#subdirectory=behaviors/design-intelligence.yaml
+  - bundle: git+https://github.com/microsoft/amplifier-bundle-recipes@main#subdirectory=behaviors/recipes.yaml
+
+tools:
+  - module: tool-render
+    source: ../modules/tool-render
+  - module: tool-target-state
+    source: ../modules/tool-target-state
+  - module: tool-render-report
+    source: ../modules/tool-render-report
+  - module: tool-design-lints
+    source: ../modules/tool-design-lints
+  - module: tool-design-ledger
+    source: ../modules/tool-design-ledger
+  - module: tool-design-controller
+    source: ../modules/tool-design-controller
+
+agents:
+  include:
+    - design-loop:design-judge
+    - design-loop:design-critic
+    - design-loop:design-maker
+    - design-loop:design-planner
+
+context:
+  include:
+    - design-loop:context/design-loop-awareness.md
