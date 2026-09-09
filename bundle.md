@@ -6,31 +6,7 @@ bundle:
 
 includes:
   - bundle: git+https://github.com/microsoft/amplifier-foundation@main
-  - bundle: git+https://github.com/microsoft/amplifier-bundle-design-intelligence@main
-  - bundle: git+https://github.com/microsoft/amplifier-bundle-recipes@main
-
-tools:
-  # MVP measurement bricks
-  - module: tool-render
-    source: ./modules/tool-render
-  - module: tool-target-state
-    source: ./modules/tool-target-state
-  - module: tool-render-report
-    source: ./modules/tool-render-report
-  # Harness deterministic bricks (no LLM)
-  - module: tool-design-lints
-    source: ./modules/tool-design-lints
-  - module: tool-design-ledger
-    source: ./modules/tool-design-ledger
-  - module: tool-design-controller
-    source: ./modules/tool-design-controller
-
-agents:
-  include:
-    - design-loop:design-judge      # MVP: one-pass judge (scores + builds + reports)
-    - design-loop:design-critic     # Harness: blind critic (scores only)
-    - design-loop:design-maker      # Harness: rubric-blind maker (builds only)
-    - design-loop:design-planner    # Harness: firewall/triage (reads the ledger)
+  - bundle: design-loop:behaviors/design-loop
 ---
 
 # Design Loop
