@@ -103,6 +103,49 @@ _ROOT_CAUSE: dict[str, str] = {
 
 _EFFORT_RANK = {"low": 0, "medium": 1, "high": 2}
 
+# Friendly, NON-error completion text per gate.reason -- see TASK 3 in the
+# rebuild spec: a budget_exhausted / floor_breach / plateau run is a normal,
+# honest completion of the governed loop, not a failure. Only "bar_met" means
+# the run actually *converged* (see `friendly_reason_text` + real_runner.py's
+# `converged = (gate.reason == "bar_met")`). Kept here (not duplicated in
+# real_runner/dry_runner/ws_handler) so the Working header, the "decide"
+# milestone, and the Results verdict can never say three different things
+# about the same run.
+_FRIENDLY_REASON: dict[str, str] = {
+    "bar_met": "Reached the quality bar",
+    "budget_exhausted": "Completed all {passes} pass(es) — best {total}/32, below the {bar} bar",
+    "floor_breach": "Stopped early — a dimension was too weak to continue",
+    "plateau": "Stopped early — improvements plateaued",
+}
+
+
+def friendly_reason_text(
+    reason: str, *, total: int | None = None, bar: int | None = None, passes: int | None = None
+) -> str:
+    """Map a raw gate.reason ("bar_met"/"budget_exhausted"/"floor_breach"/
+    "plateau"/...) to the human, NON-error sentence used everywhere a user
+    sees the outcome of a run. Never returns the word "error" or "converged"
+    -- those are UI-layer concepts (converged = reason == "bar_met"), not
+    values this function invents. Unknown/missing reasons (e.g. a
+    gate_unavailable fail-closed default) get a plain, still-non-alarming
+    fallback rather than raising or showing raw ledger vocabulary.
+    """
+    template = _FRIENDLY_REASON.get(reason or "")
+    if reason == "budget_exhausted":
+        completed = f"Completed {passes} passes" if passes is not None else "Pass budget exhausted"
+        best = f" — best {total}/32" if total is not None else ""
+        target = f", below the {bar}/32 quality bar" if bar is not None else ", quality bar not reached"
+        return completed + best + target
+    if template is None:
+        if not reason:
+            return "Finished"
+        return reason.replace("_", " ").capitalize()
+    return template.format(
+        passes=passes if passes is not None else "?",
+        total=total if total is not None else "?",
+        bar=bar if bar is not None else "the",
+    )
+
 # Objective audit fails -> first-class punch-list problems. A senior lead leads
 # with "your text is unreadable (1.9:1)" over subjective taste, because it's
 # factual. `blocker=True` means a page shouldn't ship until it's fixed, no
@@ -312,5 +355,11 @@ def build_result_payload(
         "audience": audience or "",
         "goal_note": goal_note,
         "reason": gate.get("reason", "") or "",
+        "reason_text": friendly_reason_text(
+            gate.get("reason", "") or "",
+            total=total,
+            bar=gate.get("bar"),
+            passes=gate.get("passes"),
+        ),
         "ground_truth": audit or {"available": False, "findings": [], "summary": {}, "note": ""},
     }

@@ -341,6 +341,218 @@ def _read_json(path: pathlib.Path, default: Any = None) -> Any:
         return default
 
 
+def _read_int(path: pathlib.Path, default: int = 0) -> int:
+    try:
+        return int(path.read_text(encoding="utf-8").strip())
+    except Exception:
+        return default
+
+
+# Ordered dimension keys the critic scores every pass -- used to validate a
+# scores JSON file is COMPLETE (not a partially-written file mid-save) before
+# a milestone treats it as real data.
+_DIMS = ("clarity", "elegance", "restraint", "empowerment", "agency", "ease", "character", "point")
+
+
+def _flat_scores(raw: Any) -> dict[str, int] | None:
+    """Normalise a possibly-nested {dim: int} scorecard; None if incomplete.
+
+    The blind critic agent may emit either a flat {dim:int} object or a full
+    {"scores": {...}, "reasons": {...}} wrapper (same shape dlx.py's own
+    normscores() unwraps). Returns None (not a partial dict) unless ALL 8
+    dims are present as ints -- a file mid-write from the agent's own tool
+    call is exactly this kind of "some keys, not all" partial state, and
+    treating it as real would show a wrong/incomplete scorecard in the UI.
+    """
+    if not isinstance(raw, dict):
+        return None
+    d = raw.get("scores") if isinstance(raw.get("scores"), dict) else raw
+    if not isinstance(d, dict):
+        return None
+    flat: dict[str, int] = {}
+    for dim in _DIMS:
+        v = d.get(dim)
+        if not isinstance(v, int) or isinstance(v, bool) or not 0 <= v <= 4:
+            return None
+        flat[dim] = v
+    return flat
+
+
+# Relative (to work_dir) path for each milestone phase, in the order the
+# governed loop actually produces them. `pass-live/*` is a FIXED directory
+# name the recipe reuses for EVERY pass (design-converge.yaml's `pass_dir`
+# context var never changes) -- so "first appearance" naturally means "the
+# first pass that reaches this phase", not "pass N specifically". `decide`
+# is special-cased below: gate.json is rewritten after every pass too, but
+# only its TERMINAL action (DONE/ESCALATE) is a real "decision" -- an
+# intermediate PLAN/ROLLBACK gate is just the loop continuing, not a
+# completion event worth surfacing as "Decision: ...".
+_MILESTONE_FILES: dict[str, str] = {
+    "render": "pass0/lints.json",
+    "baseline": "pass0/scores.json",
+    "plan": "pass-live/fix_batch.json",
+    "make": "pass-live/candidate.html",
+    "score": "pass-live/scores.json",
+    "decide": "gate.json",
+}
+_MILESTONE_ORDER: tuple[str, ...] = ("render", "baseline", "plan", "make", "score", "decide")
+_MILESTONE_POLL_S = 1.0
+
+
+def _near_empty_note(lints: dict[str, Any]) -> str:
+    """Best-effort honesty check on the rendered input: a near-blank page
+    (the url/image "stub" baseline HTML, or a genuinely empty document)
+    shouldn't silently score as if it were real content. Thresholds are a
+    documented heuristic, not a hard contract: a handful of chrome elements
+    (html/head/body/meta) with almost no text is the signature of the
+    `<!-- url-baseline: ... -->` stub design-converge.yaml writes for
+    url/image inputs before any candidate has been made.
+    """
+    try:
+        dom_nodes = int(lints["dom_nodes"])
+    except (KeyError, TypeError, ValueError):
+        return ""
+    try:
+        ratio = float(lints["text_to_chrome_ratio"])
+    except (KeyError, TypeError, ValueError):
+        return ""
+    if dom_nodes < 10 and ratio < 0.05:
+        return (
+            f" (looks nearly empty -- {dom_nodes} elements, "
+            f"{ratio:.2f} text/element ratio)"
+        )
+    return ""
+
+
+async def _watch_milestones(
+    out_dir: pathlib.Path, hook: WebStreamingHook,
+    finished: asyncio.Event | None = None, *, bar: int | None = None,
+) -> None:
+    """Background task: poll `out_dir` and emit ONE structured `milestone`
+    event the first time each phase's output file is real (see
+    _MILESTONE_FILES / _flat_scores for what "real" means per phase).
+
+    Runs alongside the `resume` CLI call as a background task. A completion
+    event triggers one final scan; cancellation in `finally` ensures it never outlives
+    the run. Best-effort throughout: any read/parse hiccup is skipped and
+    retried on the next poll tick, never raised -- this task must not be able
+    to crash or interfere with the real recipe run it is only observing.
+    """
+    seen: set[str] = set()
+    baseline_scores: dict[str, int] | None = None
+    try:
+        while len(seen) < len(_MILESTONE_ORDER):
+            for phase in _MILESTONE_ORDER:
+                if phase in seen:
+                    continue
+                path = out_dir / _MILESTONE_FILES[phase]
+                if not path.exists():
+                    continue
+                try:
+                    if phase == "render":
+                        lints = _read_json(path, {}) or {}
+                        if not isinstance(lints, dict) or not lints:
+                            continue
+                        await hook.milestone(
+                            "render",
+                            "Rendered your input",
+                            detail="Objective lint pass ran on the baseline render."
+                            + _near_empty_note(lints),
+                        )
+                        seen.add(phase)
+
+                    elif phase == "baseline":
+                        scores = _flat_scores(_read_json(path))
+                        if scores is None:
+                            continue
+                        baseline_scores = scores
+                        total = sum(scores.values())
+                        await hook.milestone(
+                            "baseline",
+                            f"Baseline scored — {total}/32",
+                            detail="The blind critic scored your ORIGINAL page (no fixes applied yet).",
+                            scores=scores,
+                            total=total,
+                        )
+                        seen.add(phase)
+
+                    elif phase == "plan":
+                        fixes = _read_json(path)
+                        if not isinstance(fixes, list) or not fixes:
+                            continue
+                        items = [
+                            str(f.get("directive") or f.get("fix_id") or f)
+                            for f in fixes
+                            if isinstance(f, dict)
+                        ] or [str(x) for x in fixes]
+                        await hook.milestone(
+                            "plan",
+                            f"Planner proposed {len(items)} fix{'es' if len(items) != 1 else ''}",
+                            detail="Highest-leverage, lowest-regression directives for the maker.",
+                            items=items,
+                        )
+                        seen.add(phase)
+
+                    elif phase == "make":
+                        if path.stat().st_size == 0:
+                            continue
+                        await hook.milestone(
+                            "make",
+                            "Built an improved version",
+                            detail="The maker applied the planner's directives to a fresh candidate page.",
+                        )
+                        seen.add(phase)
+
+                    elif phase == "score":
+                        scores = _flat_scores(_read_json(path))
+                        if scores is None:
+                            continue
+                        total = sum(scores.values())
+                        await hook.milestone(
+                            "score",
+                            f"Re-scored — {total}/32",
+                            detail="The blind critic scored the new candidate (never saw the maker's HTML).",
+                            scores=scores,
+                            prev_scores=baseline_scores,
+                            total=total,
+                        )
+                        seen.add(phase)
+
+                    elif phase == "decide":
+                        gate = _read_json(path)
+                        if not isinstance(gate, dict):
+                            continue
+                        action = gate.get("action")
+                        if action not in ("DONE", "ESCALATE"):
+                            continue  # intermediate PLAN/ROLLBACK -- not a completion
+                        reason = gate.get("reason") or "gate_unavailable"
+                        best_scores = _flat_scores(_read_json(out_dir / "best_scores.json"))
+                        total = sum(best_scores.values()) if best_scores else None
+                        from .results import friendly_reason_text
+
+                        passes = _read_int(out_dir / "passes.txt", 0) or None
+                        await hook.milestone(
+                            "decide",
+                            "Decision: "
+                            + friendly_reason_text(reason, total=total, passes=passes, bar=bar),
+                            detail=f"gate action={action}, reason={reason}",
+                            total=total,
+                        )
+                        seen.add(phase)
+                except Exception:
+                    logger.debug("milestone watcher: phase=%s not ready yet", phase, exc_info=True)
+            if finished is not None and finished.is_set():
+                return  # One final scan, even if some phases never produced output.
+            if len(seen) < len(_MILESTONE_ORDER):
+                if finished is None:
+                    await asyncio.sleep(_MILESTONE_POLL_S)
+                else:
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(finished.wait(), _MILESTONE_POLL_S)
+    except asyncio.CancelledError:
+        raise
+
+
 def _sanitize_records(records: Any) -> list[dict[str, Any]]:
     """Defensive normalisation of REAL ledger records before handing them to
     build_result_payload, which assumes the shape dry_runner's synthetic
@@ -374,6 +586,7 @@ async def _build_result_from_work_dir(
     kind: str,
     source: str,
     options: dict[str, Any],
+    bar: int | None = None,
 ) -> dict[str, Any]:
     """Build the app result by READING the recipe's own outputs on disk.
 
@@ -411,8 +624,11 @@ async def _build_result_from_work_dir(
     # Fail-closed defaults mirror dlx.py's own gateout(): action=ESCALATE,
     # reason=gate_unavailable, if the gate tool itself never ran.
     action = gate.get("action") or "ESCALATE"
-    converged = action == "DONE"
     reason = gate.get("reason") or "gate_unavailable"
+    # BUGFIX (was: action == "DONE"): the controller ALSO returns
+    # action=DONE for budget_exhausted -- "ran out of passes" is not the same
+    # thing as "cleared the bar". Only reason=="bar_met" is a true convergence.
+    converged = reason == "bar_met"
 
     champ_scores = best_record.get("scores") if isinstance(best_record, dict) else None
     total = verdict.get("total") if isinstance(verdict, dict) else None
@@ -425,9 +641,19 @@ async def _build_result_from_work_dir(
     records_list = all_records if isinstance(all_records, list) and all_records else (
         [best_record] if best_record else []
     )
+    # `gate` (parsed straight from gate.json) only has {action, reason,
+    # budget_remaining, prior_lint_reasons} -- augment a COPY with the two
+    # extra fields friendly_reason_text() needs for the budget_exhausted
+    # template ("Completed all {passes} pass(es) ... below the {bar} bar").
+    # `bar` isn't in gate.json (`gate` reads recipe_context["bar"], the
+    # human-authored convergence target); `passes` is read from the same
+    # passes.txt the recipe's own gate step increments every pass.
+    gate_for_state = dict(gate)
+    gate_for_state["bar"] = bar
+    gate_for_state["passes"] = _read_int(out_dir / "passes.txt", 0) or None
     state = {
         "records": _sanitize_records(records_list),
-        "gate": gate,
+        "gate": gate_for_state,
         "champion": {
             "scores": champ_scores or {},
             "total": total,
@@ -535,6 +761,19 @@ async def run_real(
     amplifier_bin = _resolve_amplifier_bin()
     env = _subprocess_env(amplifier_bin)
 
+    # Background milestone watcher: polls out_dir for the recipe's own
+    # structured output files (pass0/lints.json, best_scores.json, ...) and
+    # emits ONE clean "milestone" event per phase, in parallel with the CLI
+    # calls below -- this is what lets the Working view show ordered
+    # milestone CARDS instead of only the raw stdout/stderr firehose.
+    # Started unconditionally (cheap no-op polling if the recipe is slow to
+    # start) and always cancelled in `finally`, so it can never outlive this
+    # run or leak into the next one.
+    milestones_finished = asyncio.Event()
+    milestone_task: asyncio.Task[None] | None = asyncio.ensure_future(
+        _watch_milestones(out_dir, hook, milestones_finished, bar=recipe_context.get("bar"))
+    )
+
     try:
         await hook.display(
             f"Loading design-converge recipe (work_dir={out_dir}) ...", source="loop"
@@ -624,11 +863,17 @@ async def run_real(
             )
 
         await hook.display("Rendering report...", source="loop")
+        milestones_finished.set()
+        await milestone_task
         result = await _build_result_from_work_dir(
-            run_id, out_dir, kind=resolved_kind, source=source, options=options
+            run_id, out_dir, kind=resolved_kind, source=source, options=options,
+            bar=recipe_context.get("bar"),
+        )
+        _reason_text = (
+            (result.get("payload") or {}).get("reason_text") or result["reason"]
         )
         await hook.display(
-            f"Done: champion {result['total']}/32 ({result['reason']}).", source="gate"
+            f"Done: champion {result['total']}/32 ({_reason_text}).", source="gate"
         )
         return result
     except asyncio.CancelledError:
@@ -636,3 +881,8 @@ async def run_real(
     except Exception as exc:
         await hook.display(f"ERROR: {exc}", source="loop", level="error")
         raise
+    finally:
+        if milestone_task is not None:
+            milestone_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await milestone_task

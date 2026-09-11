@@ -59,6 +59,41 @@ class WebStreamingHook:
             "display", {"message": message, "level": level, "metadata": {"source": source}}
         )
 
+    async def milestone(
+        self,
+        phase: str,
+        title: str,
+        *,
+        detail: str = "",
+        scores: dict[str, int] | None = None,
+        prev_scores: dict[str, int] | None = None,
+        total: int | None = None,
+        items: list[str] | None = None,
+    ) -> None:
+        """Convenience wrapper for a structured MILESTONE card.
+
+        This is the clean, ordered alternative to the raw agent-transcript
+        'display' events: one event per real pipeline phase (render / baseline
+        / plan / make / score / decide), carrying already-parsed data (scores,
+        directive strings) instead of a wall of CLI text. See
+        real_runner._watch_milestones and dry_runner.run_dry for producers,
+        and landing.py's handleStreamEvent for the consumer that renders these
+        as milestone cards (vs. the raw log, which stays behind a collapsed
+        'Show raw agent log' section).
+        """
+        await self.on_event(
+            "milestone",
+            {
+                "phase": phase,
+                "title": title,
+                "detail": detail,
+                "scores": scores,
+                "prev_scores": prev_scores,
+                "total": total,
+                "items": items,
+            },
+        )
+
     async def tool_pre(self, tool_name: str, tool_input: dict[str, Any] | None = None) -> None:
         await self.on_event("tool:pre", {"tool_name": tool_name, "tool_input": tool_input or {}})
 

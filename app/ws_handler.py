@@ -17,6 +17,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from .dry_runner import run_dry
 from .protocols import WebStreamingHook
+from .storage import ACTIVE_RUNS, safe_run_dir
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +67,16 @@ def _resolve_real_source(run_dir: pathlib.Path, kind: str, meta_source: str) -> 
 
 
 def _verdict_label(converged: bool, reason: str) -> str:
-    """Short label describing the outcome -- the real gate `reason` when we
-    have one (e.g. "bar_met", "plateau"), else a generic converged/escalated."""
+    """Fallback label ONLY used if a run's payload is missing `reason_text`
+    (e.g. an old/partial result dict) -- the raw gate `reason` when we have
+    one (e.g. "bar_met", "plateau"), else a generic converged/escalated.
+
+    Normal path: `_run_start` prefers `payload["reason_text"]` (results.py's
+    `friendly_reason_text`), the same NON-error, human sentence used by the
+    "decide" milestone and the Results verdict -- see TASK 3 in the rebuild
+    spec. This function is the belt-and-suspenders fallback, not the source
+    of truth for the label shown to users.
+    """
     if reason:
         return reason
     return "converged" if converged else "escalated"
@@ -80,8 +89,11 @@ async def _run_start(
     options: dict[str, Any] | None,
 ) -> None:
     hook = WebStreamingHook(websocket)
-    run_dir = runs_dir / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = safe_run_dir(runs_dir, run_id)
+    if run_dir is None or not run_dir.is_dir():
+        ACTIVE_RUNS.discard(run_id)
+        await websocket.send_json({"type": "error", "message": "Unknown run_id"})
+        return
 
     meta = _read_meta(run_dir)
     kind = meta.get("kind", "image")
@@ -131,22 +143,36 @@ async def _run_start(
         total = result.get("total")
         converged = bool(result.get("converged", False))
         reason = result.get("reason") or ""
+        payload = result.get("payload") or {}
+        # Prefer the friendly, NON-error completion text (same source of
+        # truth as the "decide" milestone and the Results verdict banner) --
+        # _verdict_label's raw reason string is only a fallback.
+        verdict = (
+            payload.get("reason_text") if isinstance(payload, dict) else None
+        ) or _verdict_label(converged, reason)
 
-        await websocket.send_json(
-            {
-                "type": "result",
-                "run_id": run_id,
-                "report_url": f"/runs/{run_id}/report.html",
-                "upgraded_url": f"/runs/{run_id}/upgraded.html",
-                "baseline_url": f"/runs/{run_id}/baseline.html",
-                "annotated_url": f"/runs/{run_id}/annotated.html",
-                "total": total,
-                "converged": converged,
-                "verdict": _verdict_label(converged, reason),
-                "variant": result.get("variant", ""),
-                "payload": result.get("payload", {}),
-            }
-        )
+        result_msg = {
+            "type": "result",
+            "run_id": run_id,
+            "report_url": f"/runs/{run_id}/report.html",
+            "upgraded_url": f"/runs/{run_id}/upgraded.html",
+            "baseline_url": f"/runs/{run_id}/baseline.html",
+            "annotated_url": f"/runs/{run_id}/annotated.html",
+            "total": total,
+            "converged": converged,
+            "verdict": verdict,
+            "variant": result.get("variant", ""),
+            "payload": payload,
+        }
+        # Persist a self-describing snapshot so this run can be reopened in-app
+        # later from the history list (see /api/run/{id}).
+        try:
+            (run_dir / "result.json").write_text(
+                json.dumps(result_msg), encoding="utf-8"
+            )
+        except Exception:
+            logger.warning("could not persist result.json for %s", run_id, exc_info=True)
+        await websocket.send_json(result_msg)
     except asyncio.CancelledError:
         # Client asked to stop (or disconnected). Tell them the run was
         # cancelled -- best effort, the socket may already be gone -- then
@@ -164,6 +190,7 @@ async def _run_start(
         except Exception:
             pass
     finally:
+        ACTIVE_RUNS.discard(run_id)
         hook.deactivate()
 
 
@@ -181,12 +208,16 @@ async def handle_websocket(websocket: Any, runs_dir: pathlib.Path) -> None:
     try:
         while True:
             msg: dict[str, Any] = await websocket.receive_json()
+            if not isinstance(msg, dict):
+                await websocket.send_json({"type": "error", "message": "Expected an object"})
+                continue
             msg_type = msg.get("type")
             if msg_type == "start":
                 run_id = msg.get("run_id", "")
-                if not run_id:
+                run_dir = safe_run_dir(runs_dir, run_id)
+                if run_dir is None or not run_dir.is_dir():
                     await websocket.send_json(
-                        {"type": "error", "message": "missing run_id"}
+                        {"type": "error", "message": "Unknown run_id"}
                     )
                     continue
                 if run_task is not None and not run_task.done():
@@ -199,9 +230,14 @@ async def handle_websocket(websocket: Any, runs_dir: pathlib.Path) -> None:
                 options = (
                     msg.get("options") if isinstance(msg.get("options"), dict) else None
                 )
+                if run_id in ACTIVE_RUNS:
+                    await websocket.send_json({"type": "error", "message": "Run is already active"})
+                    continue
+                ACTIVE_RUNS.add(run_id)
                 run_task = asyncio.ensure_future(
                     _run_start(websocket, runs_dir, run_id, options)
                 )
+                run_task.add_done_callback(lambda task, rid=run_id: ACTIVE_RUNS.discard(rid))
             elif msg_type == "cancel":
                 if run_task is not None and not run_task.done():
                     run_task.cancel()

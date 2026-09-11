@@ -282,10 +282,37 @@ recurring ground-truth findings into the loop's real lints (the "promotion ratch
 
 ```
 Endpoints:  GET /  ·  GET /health  ·  GET /api/preflight  ·  GET /api/history
+            GET /api/run/{id}  ·  DELETE /api/run/{id}  ·  POST /api/history/clear
             POST /api/upload  ·  POST /api/source  ·  WS /ws  ·  static /runs
 Env:        DESIGN_LOOP_DRY=1 (default, free)  |  =0 (real critic, tokens)
             PORT=8010
 Output:     ~/Downloads/design-loop/runs/<run_id>/{baseline,upgraded,report,annotated}.html
+            ~/Downloads/design-loop/runs/<run_id>/result.json   ← reopen snapshot
             ~/Downloads/design-loop/history.jsonl
 Tests:      (cd modules/tool-render-report && pytest tests/test_template.py tests/test_verdict.py)
 ```
+
+## 11. Later additions (this session, after the handoff was first written)
+
+- **Cleaner live agent log (real backend).** The real backend forwards the
+  sub-agents' console output as `display` events (source `agent`/`agent-stderr`) — a
+  firehose of `Thinking:` rules, token-usage boxes, tree-drawn tool dumps, and giant
+  JSON. `app/landing.py` now de-noises that stream into **role-colored agent cards**
+  (Critic/Planner/Maker) showing clean tool calls + results, a cost chip
+  (`$0.43 · 4 calls`), and reasoning tucked into a collapsible — dropping decoration,
+  token boxes, and content dumps. Protocol unchanged (front-end only), so it doesn't
+  touch the real run path. `window.__dlFeed(events)` exists for headless testing.
+- **History & artifact management.** Each run now persists `result.json` (the full
+  result payload). New endpoints: `GET /api/run/{id}` (reopen a past run's Results
+  in-app), `DELETE /api/run/{id}` (remove the run dir + its history line, path-traversal
+  guarded), `POST /api/history/clear` (empty the index, keep files). The landing
+  "Past verdicts" list is now a manager: a count + **Clear history**, and per-card
+  **Open** (renders the saved verdict/punch-list/before-after in-app), **Report ↗**, and
+  **Delete** (with confirm). `/api/history` entries carry `kind`, `goal`, and links to
+  every artifact that exists on disk.
+
+## 12. Run management follow-up (2026-09-11)
+
+See [run-history.md](./run-history.md) for current behavior and validation.
+Re-runs use `POST /api/run/{id}/rerun` and a fresh ID.
+`DESIGN_LOOP_DATA_DIR` overrides the default data directory for isolated runs.
