@@ -205,6 +205,7 @@ stages:
           inv(){ local t=${INVOKE_TIMEOUT:-120}; local n=0; while [ $n -lt 2 ]; do _to "$t" "$@" && return 0; n=$((n+1)); echo "invoke retry $n after timeout/err" >&2; done; _to "$t" "$@"; }
           WD="{{work_dir}}"; B='{{bundle_ref}}'
           python3 "$WD/dlx.py" normscores "$WD/best_scores.json" >/dev/null 2>&1 || true
+          cp "$WD/best_scores.json" "$WD/pass0/scores.json"
           python3 "$WD/dlx.py" baserec "$WD" "{{run_id}}" "{{task_class}}" "{{signature}}" "{{rubric_version}}" > "$WD/pass0/record.json"
           inv amplifier tool invoke design_ledger op=append record="$(cat "$WD/pass0/record.json")" --output json ${B:+--bundle "$B"} > "$WD/pass0/_a.txt" 2>/dev/null || true
           echo '{"seeded":"true"}'

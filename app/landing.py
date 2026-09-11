@@ -19,6 +19,14 @@ from __future__ import annotations
 from amplifier_module_tool_render_report import template as t
 
 _EXTRA_CSS = """
+html{background:var(--bg-2)}
+@media(max-width:640px){
+  .pw-journey-nav{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .pw-journey-nav>[data-pw-tab]{padding:10px 0;font-size:11px}
+  #dl-mode-badge{grid-column:1 / 3;margin-left:0!important;justify-self:start}
+  #dl-reset-btn{margin-left:0!important;padding:6px!important;font-size:10px!important}
+}
+.dl-context-row input{min-width:0}
 .dl-smart{max-width:660px;margin:0 auto;border:2px dashed var(--border-1);border-radius:10px;
   background:var(--bg-card);padding:8px 8px 0;transition:border-color .15s,background .15s;box-shadow:var(--shadow-card)}
 .dl-smart.dl-drag{border-color:var(--slp-amber);background:var(--band-soft)}
@@ -80,6 +88,7 @@ _EXTRA_CSS = """
 .dl-ba-col h4{font-family:var(--font-ui);font-weight:600;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--fg-3);margin:0 0 8px;display:flex;align-items:center;gap:8px}
 .dl-ba-col h4 .dl-ba-tag{font-weight:600}
+.dl-ba-note{font-family:var(--font-ui);font-size:12.5px;color:#a4392a;margin:2px 0 10px}
 /* Before/after thumbnails: render the whole page at 50% so the hero is
    visible, not just the top 300px sliver. Wrapper clips; iframe is 2x wide
    and scaled down. */
@@ -98,6 +107,20 @@ _EXTRA_CSS = """
 .dl-history-card{background:var(--bg-card);border:1px solid var(--border-1);border-radius:6px;
   padding:14px 16px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow-card);
   text-decoration:none;color:inherit}
+.dl-hist-clear{font-family:var(--font-ui);font-weight:500;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:#a4392a;background:none;border:1px solid var(--border-1);border-radius:4px;padding:5px 12px;cursor:pointer}
+.dl-hist-clear:hover{border-color:#a4392a}
+.dl-hist-kind{font-family:var(--font-ui);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--fg-3);border:1px solid var(--border-1);border-radius:10px;padding:1px 8px}
+.dl-hist-actions{display:flex;align-items:center;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border-1)}
+.dl-hist-open{font-family:var(--font-ui);font-weight:600;font-size:12px;color:#fff;background:var(--slp-amber);
+  border:none;border-radius:4px;padding:6px 14px;cursor:pointer}
+.dl-hist-open:hover{background:var(--slp-amber-dark)}
+.dl-hist-link{font-family:var(--font-ui);font-weight:600;font-size:12px;color:var(--fg-accent);
+  text-decoration:underline;text-underline-offset:2px}
+.dl-hist-del{margin-left:auto;font-family:var(--font-ui);font-size:13px;color:var(--fg-3);background:none;
+  border:1px solid var(--border-1);border-radius:4px;padding:4px 9px;cursor:pointer;line-height:1}
+.dl-hist-del:hover{color:#a4392a;border-color:#a4392a}
 /* mode badge */
 .dl-mode-badge{align-self:center;font-family:var(--font-ui);font-weight:600;font-size:10px;letter-spacing:.08em;
   text-transform:uppercase;padding:4px 10px;border-radius:12px;border:1px solid var(--border-1);color:var(--fg-3)}
@@ -216,6 +239,98 @@ _EXTRA_CSS = """
 .dl-bm-vs{font-size:10px;color:var(--fg-3);letter-spacing:.05em}
 .dl-bm-head{display:flex;gap:8px;font-family:var(--font-ui);font-weight:600;font-size:10px;letter-spacing:.05em;
   text-transform:uppercase;color:var(--fg-3);justify-content:flex-end;margin-bottom:2px}
+/* agent-log cards (real backend firehose, de-noised) */
+.dl-agent-card{border:1px solid var(--border-1);border-left:3px solid var(--fg-3);border-radius:8px;
+  background:var(--bg-card);margin:8px 0;padding:9px 12px}
+.dl-agent-card.role-critic{border-left-color:var(--slp-amber)}
+.dl-agent-card.role-planner{border-left-color:#a4392a}
+.dl-agent-card.role-maker{border-left-color:var(--slp-sage-dark)}
+.dl-agent-card.role-judge{border-left-color:var(--fg-accent)}
+.dl-agent-head{display:flex;align-items:center;gap:8px;font-family:var(--font-ui);font-size:12px}
+.dl-agent-dot{width:9px;height:9px;border-radius:50%;background:var(--fg-3);flex:none}
+.role-critic .dl-agent-dot{background:var(--slp-amber)}
+.role-planner .dl-agent-dot{background:#a4392a}
+.role-maker .dl-agent-dot{background:var(--slp-sage-dark)}
+.role-judge .dl-agent-dot{background:var(--fg-accent)}
+.dl-agent-name{font-weight:600;color:var(--fg-1);text-transform:capitalize}
+.dl-agent-cost{color:var(--fg-3);font-size:11px}
+.dl-agent-think{margin-left:auto;color:var(--slp-amber);font-size:11px;letter-spacing:.04em;display:none}
+.dl-card-active .dl-agent-think{display:inline}
+.dl-agent-tools{display:flex;flex-direction:column;gap:2px;margin-top:5px}
+.dl-tool-row{font-family:var(--font-ui);font-size:12.5px;color:var(--fg-2);display:flex;align-items:baseline;gap:7px}
+.dl-tool-ico{flex:none}
+.dl-tool-name{color:var(--fg-1);font-weight:600}
+.dl-tool-arg{color:var(--fg-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dl-tool-status{margin-left:auto;flex:none}
+.dl-tool-row.fail .dl-tool-name{color:#a4392a}
+.dl-agent-reason{margin-top:6px}
+.dl-agent-reason summary{font-family:var(--font-ui);font-size:11px;color:var(--fg-3);cursor:pointer;
+  letter-spacing:.05em;text-transform:uppercase}
+.dl-agent-reason .dl-reason-body{font-family:var(--font-body);font-size:12.5px;color:var(--fg-3);line-height:1.5;
+  margin-top:6px;max-height:200px;overflow:auto;white-space:pre-wrap}
+/* milestone cards -- the CLEAN, ordered PRIMARY view (replaces the raw
+   firehose, which now lives inside the collapsed "Show raw agent log"
+   <details> below). One card per real pipeline phase: render, baseline,
+   plan, make, score, decide. */
+.dl-phase-indicator{font-family:var(--font-ui);font-size:12px;color:var(--fg-accent);font-weight:600;
+  letter-spacing:.03em;margin:2px 0 12px}
+.dl-milestones{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.dl-ms-card{border:1px solid var(--border-1);border-left:3px solid var(--slp-amber);border-radius:8px;
+  background:var(--bg-card);box-shadow:var(--shadow-card);padding:12px 16px;opacity:.55;transition:opacity .2s}
+.dl-ms-card.ms-active{opacity:1;border-left-color:var(--slp-sage-dark)}
+.dl-ms-card.ms-decide{border-left-color:var(--slp-sage-dark)}
+.dl-ms-head{display:flex;align-items:center;gap:9px}
+.dl-ms-ico{flex:none;font-size:14px;color:var(--fg-accent)}
+.dl-ms-title{font-family:var(--font-ui);font-weight:600;font-size:13.5px;color:var(--fg-1)}
+.dl-ms-detail{font-family:var(--font-body);font-size:12.5px;color:var(--fg-3);margin-top:4px;line-height:1.45}
+.dl-ms-items{margin:8px 0 0;padding-left:18px;font-family:var(--font-body);font-size:12.5px;color:var(--fg-2)}
+.dl-ms-items li{margin-bottom:3px}
+.dl-ms-scores{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;margin-top:8px}
+@media(max-width:640px){.dl-ms-scores{grid-template-columns:1fr}}
+.dl-ms-score-row{display:flex;align-items:center;gap:8px;font-family:var(--font-ui);font-size:11.5px}
+.dl-ms-score-name{width:88px;color:var(--fg-2)}
+.dl-ms-score-track{flex:1;height:5px;border-radius:3px;background:var(--border-1);position:relative;overflow:hidden}
+.dl-ms-score-b{position:absolute;left:0;top:0;height:100%;background:var(--slp-amber);border-radius:3px}
+.dl-ms-score-num{width:56px;text-align:right;color:var(--fg-3)}
+.dl-ms-score-num b{color:var(--fg-1)}
+/* collapsible raw agent log (was the primary Working view; demoted here) */
+.dl-rawlog-details{margin-top:6px}
+.dl-rawlog-summary{font-family:var(--font-ui);font-weight:500;font-size:11px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--fg-3);cursor:pointer;padding:6px 2px;user-select:none}
+.dl-rawlog-summary:hover{color:var(--fg-accent)}
+/* results top bar: non-destructive back-to-home + run identity (id + when) */
+.dl-result-topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 20px}
+.dl-back-btn{font-family:var(--font-ui);font-weight:600;font-size:12px;letter-spacing:.03em;color:var(--fg-accent);
+  background:var(--bg-card);border:1px solid var(--border-1);border-radius:6px;padding:7px 14px;cursor:pointer}
+.dl-back-btn:hover{border-color:var(--slp-amber)}
+.dl-run-ident{font-family:var(--font-ui);font-size:11.5px;letter-spacing:.03em;color:var(--fg-3);
+  display:inline-flex;align-items:center;gap:8px}
+.dl-run-ident b{font-weight:600;color:var(--fg-2)}
+.dl-run-dot{width:3px;height:3px;border-radius:50%;background:var(--fg-3);display:inline-block}
+/* runs dashboard: search + status filters over the history grid */
+.dl-dash-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.dl-dash-search{flex:1 1 200px;min-width:150px;font-family:var(--font-ui);font-size:13px;color:var(--fg-1);
+  background:var(--bg-card);border:1px solid var(--border-1);border-radius:6px;padding:9px 12px;outline:none}
+.dl-dash-search:focus{border-color:var(--slp-amber)}
+.dl-dash-search::placeholder{color:var(--fg-3)}
+.dl-dash-filters{display:inline-flex;gap:6px}
+.dl-fchip{font-family:var(--font-ui);font-weight:600;font-size:11px;letter-spacing:.03em;color:var(--fg-3);
+  background:var(--bg-card);border:1px solid var(--border-1);border-radius:20px;padding:6px 13px;cursor:pointer}
+.dl-fchip:hover{border-color:var(--slp-amber)}
+.dl-fchip-on{color:#fff;background:var(--slp-amber);border-color:var(--slp-amber)}
+.dl-dash-count{font-family:var(--font-ui);font-size:11px;letter-spacing:.03em;color:var(--fg-3)}
+.dl-hist-when{font-family:var(--font-ui);font-size:11px;color:var(--fg-3)}
+/* collapsed "judged on eight things" explainer -- tucked, not a wall of tiles */
+.dl-dims-disclosure{max-width:660px;margin:30px auto 0;border:1px solid var(--border-1);border-radius:8px;
+  background:var(--bg-card);overflow:hidden}
+.dl-dims-summary{font-family:var(--font-ui);font-weight:500;font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--fg-3);cursor:pointer;padding:13px 16px;user-select:none;list-style:none;display:flex;align-items:center;gap:9px}
+.dl-dims-summary::-webkit-details-marker{display:none}
+.dl-dims-summary::before{content:"\\25B8";color:var(--slp-amber);font-size:10px;transition:transform .15s;display:inline-block}
+.dl-dims-disclosure[open] .dl-dims-summary::before{transform:rotate(90deg)}
+.dl-dims-summary:hover{color:var(--fg-accent)}
+.dl-dims-body{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border-1);border-top:1px solid var(--border-1)}
+@media(max-width:640px){.dl-dims-body{grid-template-columns:1fr}}
 """
 
 
@@ -279,15 +394,23 @@ def _dims_grid() -> str:
 
 
 def _history_section() -> str:
-    """Container for the 'Past verdicts' list; populated client-side from
-    GET /api/history on load and refreshed after each run completes."""
+    """The runs dashboard: a searchable, status-filterable list of past runs.
+    Populated client-side from GET /api/history on load and refreshed after
+    each run completes. Replaces the old flat 'Past verdicts' tile strip."""
     return (
-        '<div style="max-width:660px;margin:46px auto 0">'
-        '<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:18px">'
-        '<span style="display:block;width:30px;height:1px;background:var(--slp-amber)"></span>'
-        '<span style="font-family:var(--font-ui);font-weight:500;font-size:11px;letter-spacing:.24em;'
-        'text-transform:uppercase;color:var(--fg-3)">Past verdicts</span>'
-        '<span style="display:block;width:30px;height:1px;background:var(--slp-amber)"></span>'
+        '<div style="max-width:660px;margin:44px auto 0">'
+        '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:16px">'
+        '<span style="font-family:var(--font-display);font-weight:400;font-size:20px;color:var(--fg-1)">Your runs</span>'
+        '<span id="dl-dash-count" class="dl-dash-count"></span>'
+        "</div>"
+        '<div class="dl-dash-tools">'
+        '<input id="dl-dash-search" class="dl-dash-search" type="text" placeholder="Search by goal\u2026" autocomplete="off" />'
+        '<div class="dl-dash-filters">'
+        '<button type="button" class="dl-fchip dl-fchip-on" data-filter="all">All</button>'
+        '<button type="button" class="dl-fchip" data-filter="converged">\u2713 Converged</button>'
+        '<button type="button" class="dl-fchip" data-filter="escalated">\u26a0 Escalated</button>'
+        "</div>"
+        '<button type="button" id="dl-history-clear" class="dl-hist-clear">Clear</button>'
         "</div>"
         '<div id="dl-history-list" class="dl-history-empty" style="text-align:center">Loading&hellip;</div>'
         "</div>"
@@ -341,6 +464,8 @@ def _working_view() -> str:
         '<span id="dl-run-status-text" style="font-family:var(--font-ui);font-weight:600;font-size:12px;'
         'letter-spacing:.04em;color:var(--fg-accent)">Running&hellip;</span>'
         "</div>"
+        '<button type="button" id="dl-home-btn" class="dl-back-btn" '
+        'title="Go home \u2014 your run keeps running; return via the Working tab">\u2190 Home</button>'
         '<button type="button" id="dl-stop-btn" class="dl-stop-btn">&#9632; Stop</button>'
         "</div>"
         "</div>"
@@ -352,13 +477,32 @@ def _working_view() -> str:
         '<div class="dl-progress-track"><div class="dl-progress-bar" id="dl-progress-bar"></div></div>'
         "</div>"
     )
+    # PRIMARY: current-phase indicator + ordered milestone cards, derived from
+    # the recipe's own structured outputs (see real_runner._watch_milestones /
+    # dry_runner.run_dry, which emit "milestone" stream events). The raw
+    # per-line CLI transcript (source=agent/agent-stderr display events) still
+    # arrives on the SAME socket, but is now demoted to a collapsed <details>
+    # -- available on demand, no longer the primary view.
+    phase_indicator = (
+        '<div id="dl-phase-indicator" class="dl-phase-indicator">Starting&hellip;</div>'
+    )
+    milestones = '<div id="dl-milestones" class="dl-milestones"></div>'
+    raw_log = (
+        '<details id="dl-rawlog" class="dl-rawlog-details">'
+        '<summary class="dl-rawlog-summary">Show raw agent log</summary>'
+        '<div id="dl-log" style="background:var(--bg-card);border:1px solid var(--border-1);'
+        'border-radius:6px;padding:14px 20px;box-shadow:var(--shadow-card);min-height:120px;'
+        'margin-top:10px"></div>'
+        "</details>"
+    )
     return (
         '<div data-pw-view="working" hidden>'
         + header
         + progress
-        + '<div id="dl-log" style="background:var(--bg-card);border:1px solid var(--border-1);'
-        'border-radius:6px;padding:14px 20px;box-shadow:var(--shadow-card);min-height:120px"></div>'
-        "</div>"
+        + phase_indicator
+        + milestones
+        + raw_log
+        + "</div>"
     )
 
 
@@ -407,6 +551,8 @@ def _script() -> str:
         "var previewImg=document.getElementById('dl-preview-img');",
         "var statusEl=document.getElementById('dl-status');",
         "var logEl=document.getElementById('dl-log');",
+        "var milestonesEl=document.getElementById('dl-milestones');",
+        "var phaseIndicatorEl=document.getElementById('dl-phase-indicator');",
         "var workingTab=document.querySelector('[data-pw-tab=\"working\"]');",
         "var resultsTab=document.querySelector('[data-pw-tab=\"results\"]');",
         "var resultsView=document.querySelector('[data-pw-view=\"results\"]');",
@@ -520,13 +666,144 @@ def _script() -> str:
         "}",
         "",
         "var toolRows={};",
+        "// ---- agent-log de-noiser: fold the real backend's console firehose",
+        "// (source 'agent'/'agent-stderr' display lines: thinking blocks, token",
+        "// boxes, tree-drawn tool dumps, giant JSON) into clean per-agent cards.",
+        "var curCard=null,curName=null,lastTool=null,reasonMode=false,skipDump=false;",
+        "function clearAgentState(){curCard=null;curName=null;lastTool=null;reasonMode=false;skipDump=false;}",
+        "function stripTree(s){return s.replace(/^[\\s\\u2502\\u250c\\u2514\\u251c\\u2500|]+/,'').trim();}",
+        "function isRule(s){return s===''||/^[=_\\-\\u2500\\u2550\\s]+$/.test(s);}",
+        "function baseName(p){p=(p||'').replace(/\\/+$/,'');var i=p.lastIndexOf('/');return i>=0?p.slice(i+1):p;}",
+        "function agentTag(msg){var m=msg.match(/\\[(design-loop-design-\\w+|foundation:[\\w.-]+)\\]/);return m?m[1]:null;}",
+        "function shortAgent(tag){var m=tag.match(/design-(\\w+)$/);if(m){return m[1];}var i=tag.indexOf(':');return i>=0?tag.slice(i+1):tag;}",
+        "function roleClass(short){var r=['critic','planner','maker','judge'];return r.indexOf(short)>=0?('role-'+short):'role-other';}",
+        "function ensureCard(short){",
+        "  if(curCard&&curName===short){return curCard;}",
+        "  if(curCard){curCard.classList.remove('dl-card-active');}",
+        "  var card=document.createElement('div');card.className='dl-agent-card '+roleClass(short)+' dl-card-active';",
+        "  card._cost=0;card._calls=0;",
+        "  var head=document.createElement('div');head.className='dl-agent-head';",
+        "  head.innerHTML='<span class=\"dl-agent-dot\"></span><span class=\"dl-agent-name\">'+escHtml(short)+'</span>'+",
+        "    '<span class=\"dl-agent-cost\"></span><span class=\"dl-agent-think\">\\u2026 thinking</span>';",
+        "  var tools=document.createElement('div');tools.className='dl-agent-tools';",
+        "  card.appendChild(head);card.appendChild(tools);",
+        "  card._head=head;card._tools=tools;card._costEl=head.querySelector('.dl-agent-cost');",
+        "  card._thinkEl=head.querySelector('.dl-agent-think');card._reason=null;",
+        "  logEl.appendChild(card);logEl.scrollTop=logEl.scrollHeight;",
+        "  curCard=card;curName=short;lastTool=null;reasonMode=false;skipDump=false;",
+        "  return card;",
+        "}",
+        "function setThink(card,on){if(card&&card._thinkEl){card._thinkEl.style.display=on?'inline':'none';}}",
+        "function addCost(card,amt){if(!card){return;}card._cost+=amt;card._costEl.textContent='$'+card._cost.toFixed(2)+' \\u00b7 '+card._calls+' calls';}",
+        "function addTool(card,name){",
+        "  card._calls++;var row=document.createElement('div');row.className='dl-tool-row';row.setAttribute('data-tool',name);",
+        "  row.innerHTML='<span class=\"dl-tool-ico\">\\u1f527</span><span class=\"dl-tool-name\">'+escHtml(name)+'</span>'+",
+        "    '<span class=\"dl-tool-arg\"></span><span class=\"dl-tool-status\">\\u00b7\\u00b7\\u00b7</span>';",
+        "  row.querySelector('.dl-tool-ico').textContent='\\ud83d\\udd27';",
+        "  card._tools.appendChild(row);addCost(card,0);logEl.scrollTop=logEl.scrollHeight;return row;",
+        "}",
+        "function findTool(card,name){var rows=card._tools.querySelectorAll('[data-tool=\"'+name+'\"]');return rows.length?rows[rows.length-1]:lastTool;}",
+        "function setToolArg(row,arg){if(row&&!row._arg){row._arg=1;row.querySelector('.dl-tool-arg').textContent=arg;}}",
+        "function setToolResult(row,ok,extra){if(!row){return;}row.classList.toggle('fail',!ok);",
+        "  var s=row.querySelector('.dl-tool-status');s.textContent=(ok?'\\u2705':'\\u274c')+(extra?(' '+extra):'');}",
+        "function addReason(card,text){if(!card){return;}",
+        "  if(!card._reason){var d=document.createElement('details');d.className='dl-agent-reason';",
+        "    d.innerHTML='<summary>reasoning</summary><div class=\"dl-reason-body\"></div>';",
+        "    card.appendChild(d);card._reason=d.querySelector('.dl-reason-body');}",
+        "  card._reason.textContent+=(card._reason.textContent?' ':'')+text;}",
+        "function agentLine(src,msg){",
+        "  var tag=agentTag(msg);if(tag){ensureCard(shortAgent(tag));}",
+        "  var card=curCard;var core=stripTree(msg);",
+        "  if(/Thinking(\\.\\.\\.|:)?\\s*$/.test(core)){if(card){setThink(card,true);}reasonMode=true;skipDump=false;return;}",
+        "  if(isRule(core)){if(reasonMode){reasonMode=false;}return;}",
+        "  if(/Token Usage/.test(core)){return;}",
+        "  var cm=core.match(/Cost:\\s*\\$([0-9.]+)/);if(cm){addCost(card,parseFloat(cm[1]));reasonMode=false;return;}",
+        "  var um=core.match(/Using tool:\\s*([A-Za-z0-9_]+)/);",
+        "  if(um){if(card){setThink(card,false);lastTool=addTool(card,um[1]);}reasonMode=false;skipDump=false;return;}",
+        "  var rm=msg.match(/(\\u2705|\\u274c)\\s*\\[[^\\]]*\\]\\s*Tool result:\\s*([A-Za-z0-9_]+)/);",
+        "  if(rm){var ok=rm[1]==='\\u2705';if(card){setToolResult(findTool(card,rm[2]),ok,'');}skipDump=false;return;}",
+        "  var am=core.match(/^(file_path|source|url|path|command|skill_name):\\s*(.+)$/);",
+        "  if(am&&lastTool){setToolArg(lastTool,am[1]==='command'?String(am[2]).slice(0,40):baseName(am[2]));return;}",
+        "  if(/^(content|improved_html|body):/.test(core)){skipDump=true;return;}",
+        "  var bm=core.match(/^bytes:\\s*(\\d+)/);if(bm&&lastTool){setToolResult(lastTool,true,'('+bm[1]+' bytes)');return;}",
+        "  if(/^(screenshot_path|target_html_path|target_screenshot_path|file_path|lines_read|offset|total_lines):/.test(core)){return;}",
+        "  if(/Cannot read file|No such file|timed out|UnicodeDecodeError|\\[stderr\\]/.test(core)){if(lastTool){setToolResult(lastTool,false,'failed');}else{addReason(card,'\\u26a0 '+core.slice(0,120));}return;}",
+        "  if(skipDump){return;}",
+        "  if(/^[\\{\\[\\\"]/.test(core)||core.indexOf('\"scores\"')>=0||core.slice(0,3)==='...'){return;}",
+        "  if(reasonMode||card){addReason(card,core);return;}",
+        "}",
+        "// ---- milestone cards: the CLEAN, ordered PRIMARY view -----------------",
+        "// One card per real pipeline phase (render/baseline/plan/make/score/",
+        "// decide), built from the structured `milestone` stream event -- see",
+        "// real_runner._watch_milestones / dry_runner.run_dry (producers) and",
+        "// protocols.WebStreamingHook.milestone() (wire shape).",
+        "var MS_LABELS={clarity:'Clarity',elegance:'Elegance',restraint:'Restraint',empowerment:'Empowerment',",
+        "  agency:'Agency',ease:'Ease',character:'Character',point:'Point'};",
+        "var MS_ORDER=['clarity','elegance','restraint','empowerment','agency','ease','character','point'];",
+        "var MS_ICON={render:'\u25A1',baseline:'\u25CF',plan:'\u2699',make:'\u2692',score:'\u2605',decide:'\u2713'};",
+        "var MS_PHASE_LABEL={render:'Rendering your input',baseline:'Scoring the baseline',",
+        "  plan:'Planning the next fix',make:'Building the candidate',score:'Re-scoring the candidate',",
+        "  decide:'Wrapping up'};",
+        "var msSeen={};",
+        "function msScoreRowsHtml(scores,prevScores){",
+        "  if(!scores){return '';}",
+        "  var html='<div class=\"dl-ms-scores\">';",
+        "  for(var i=0;i<MS_ORDER.length;i++){",
+        "    var dim=MS_ORDER[i];var b=scores[dim];",
+        "    if(b===undefined||b===null){continue;}",
+        "    var a=(prevScores&&prevScores[dim]!==undefined&&prevScores[dim]!==null)?prevScores[dim]:null;",
+        "    html+='<div class=\"dl-ms-score-row\"><span class=\"dl-ms-score-name\">'+MS_LABELS[dim]+'</span>';",
+        "    html+='<span class=\"dl-ms-score-track\"><span class=\"dl-ms-score-b\" style=\"width:'+(b/4*100)+'%\"></span></span>';",
+        "    html+='<span class=\"dl-ms-score-num\">'+(a!==null?(a+' \u2192 '):'')+'<b>'+b+'</b></span></div>';",
+        "  }",
+        "  return html+'</div>';",
+        "}",
+        "function msItemsHtml(items){",
+        "  if(!items||!items.length){return '';}",
+        "  var html='<ul class=\"dl-ms-items\">';",
+        "  for(var i=0;i<items.length;i++){html+='<li>'+escHtml(items[i])+'</li>';}",
+        "  return html+'</ul>';",
+        "}",
+        "function setPhaseIndicator(phase,isFinal){",
+        "  if(!phaseIndicatorEl){return;}",
+        "  phaseIndicatorEl.textContent=isFinal?'Finished':('Currently: '+(MS_PHASE_LABEL[phase]||phase));",
+        "}",
+        "function renderMilestone(data){",
+        "  data=data||{};var phase=data.phase||'';",
+        "  if(!phase||msSeen[phase]){return;}",
+        "  msSeen[phase]=true;",
+        "  if(milestonesEl){",
+        "    var prevActive=milestonesEl.querySelector('.dl-ms-card.ms-active');",
+        "    if(prevActive){prevActive.classList.remove('ms-active');}",
+        "    var card=document.createElement('div');",
+        "    card.className='dl-ms-card ms-'+phase+' ms-active';",
+        "    var html='<div class=\"dl-ms-head\"><span class=\"dl-ms-ico\">'+(MS_ICON[phase]||'\u2022')+'</span>';",
+        "    html+='<span class=\"dl-ms-title\">'+escHtml(data.title||phase)+'</span></div>';",
+        "    if(data.detail){html+='<div class=\"dl-ms-detail\">'+escHtml(data.detail)+'</div>';}",
+        "    html+=msItemsHtml(data.items);",
+        "    html+=msScoreRowsHtml(data.scores,data.prev_scores);",
+        "    card.innerHTML=html;",
+        "    milestonesEl.appendChild(card);",
+        "    milestonesEl.scrollTop=milestonesEl.scrollHeight;",
+        "  }",
+        "  setPhaseIndicator(phase,phase==='decide');",
+        "}",
+        "function resetMilestones(){",
+        "  msSeen={};if(milestonesEl){milestonesEl.innerHTML='';}",
+        "  if(phaseIndicatorEl){phaseIndicatorEl.textContent='Starting\\u2026';}",
+        "}",
+        "",
         "function handleStreamEvent(evtType,data){",
         "  data=data||{};",
+        "  if(evtType==='milestone'){renderMilestone(data);return;}",
         "  if(evtType==='display'){",
         "    var source=(data.metadata&&data.metadata.source)||'loop';",
         "    var message=data.message||'';",
         "    var m=message.match(/Pass\\s+(\\d+)\\s*\\/\\s*(\\d+)/);",
         "    if(m){setProgress(parseInt(m[1],10),parseInt(m[2],10),'Pass '+m[1]+' of '+m[2]);}",
+        "    if(source==='agent'||source==='agent-stderr'||source==='stderr'){agentLine(source,message);return;}",
+        "    var core=stripTree(message);if(isRule(core)){return;}",
+        "    if(curCard){curCard.classList.remove('dl-card-active');setThink(curCard,false);}clearAgentState();",
         "    appendLogRow(source.toUpperCase(),' '+message,true);",
         "  } else if(evtType==='tool:pre'){",
         "    var name=data.tool_name||'tool';",
@@ -546,6 +823,7 @@ def _script() -> str:
         "    }",
         "  }",
         "}",
+        "window.__dlFeed=function(arr){arr.forEach(function(e){handleStreamEvent(e.event_type,e.data);});};",
         "",
         "function fallbackCopy(text){",
         "  var ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.left='-9999px';",
@@ -575,6 +853,14 @@ def _script() -> str:
         "  document.body.appendChild(a);a.click();document.body.removeChild(a);",
         "}",
         "function sevLabel(s){return s==='critical'?'Critical':(s==='high'?'High':'Medium');}",
+        "function fmtWhen(iso){",
+        "  if(!iso){return '';}",
+        "  var d=new Date(iso);",
+        "  if(isNaN(d.getTime())){return String(iso).slice(0,16).replace('T',' ');}",
+        "  try{return d.toLocaleString(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});}",
+        "  catch(e){return d.toISOString().slice(0,16).replace('T',' ');}",
+        "}",
+        "var histEntries=[],histById={},histFilter='all',histQuery='';",
         "",
         "function renderResults(msg){",
         "  var p=msg.payload||{};",
@@ -588,7 +874,7 @@ def _script() -> str:
         "  var shipSub;",
         "  if(p.blockers){shipSub='Ground-truth checks found '+p.blockers+' blocking issue'+(p.blockers!=1?'s':'')+' on your real page \\u2014 these gate shipping regardless of the '+bar+'/32 score. Fix them first.';}",
         "  else if(ship){shipSub='Cleared the bar of '+bar+'/32. Apply the punch list below to push it further, or ship as-is.';}",
-        "  else {shipSub='Best-effort upgrade below the bar of '+bar+'/32'+(p.reason?(' ('+escHtml(p.reason)+')'):'')+'. Start with the punch list \\u2014 these are the highest-impact fixes.';}",
+        "  else {shipSub='Best-effort upgrade below the bar of '+bar+'/32'+(p.reason_text?(' ('+escHtml(p.reason_text)+')'):'')+'. Start with the punch list \\u2014 these are the highest-impact fixes.';}",
         "  var delta='';",
         "  if(prevTotal!==null&&total!==null&&total!==undefined){",
         "    var d=total-prevTotal;",
@@ -599,6 +885,13 @@ def _script() -> str:
         "  var goalNote=p.goal_note?('<div class=\"dl-goal-note\">'+escHtml(p.goal_note)+'</div>'):'';",
         "  var rootCause=p.root_cause?('<div class=\"dl-root\"><b>Root cause \\u2014</b> '+escHtml(p.root_cause)+'.</div>'):'';",
         "  var html='';",
+        "  var runId=msg.run_id||currentRunId||'';",
+        "  var ts=msg.ts||(histById[runId]||{}).ts||(new Date()).toISOString();",
+        "  var whenStr=fmtWhen(ts);",
+        "  html+='<div class=\"dl-result-topbar\">';",
+        "  html+='<button type=\"button\" class=\"dl-back-btn\" id=\"dl-back-home\">\\u2190 All runs</button>';",
+        "  html+='<span class=\"dl-run-ident\">'+(runId?('<b>Run '+escHtml(String(runId).slice(0,8))+'</b>'):'')+(whenStr?('<span class=\"dl-run-dot\"></span>'+escHtml(whenStr)):'')+'</span>';",
+        "  html+='</div>';",
         "  html+='<div style=\"display:flex;align-items:center;gap:10px;margin-bottom:14px\">';",
         "  html+='<span style=\"display:block;width:26px;height:1px;background:var(--slp-amber)\"></span>';",
         "  html+='<span style=\"font-family:var(--font-ui);font-weight:500;font-size:11px;letter-spacing:.2em;';",
@@ -687,12 +980,22 @@ def _script() -> str:
         "    html+='</div>';",
         "  }",
         "  // before / after",
-        "  html+='<div class=\"dl-sec-head\">Before &amp; after</div><div class=\"dl-ba-grid\">';",
-        "  html+='<div class=\"dl-ba-col\"><h4><span class=\"dl-ba-tag\">Before</span> \\u00b7 baseline</h4>';",
-        "  html+='<div class=\"dl-ba-shot\"><iframe class=\"dl-ba-frame\" scrolling=\"no\" src=\"'+escHtml(msg.baseline_url||'')+'\" title=\"Baseline\" loading=\"lazy\"></iframe></div></div>';",
-        "  html+='<div class=\"dl-ba-col\"><h4><span class=\"dl-ba-tag\" style=\"color:var(--slp-sage-dark)\">After</span> \\u00b7 upgraded</h4>';",
-        "  html+='<div class=\"dl-ba-shot\"><iframe class=\"dl-ba-frame\" scrolling=\"no\" src=\"'+escHtml(msg.upgraded_url||'')+'\" title=\"Upgraded\" loading=\"lazy\"></iframe></div></div>';",
-        "  html+='</div>';",
+        "  // Before/after only makes sense when a DISTINCT upgraded candidate exists.",
+        "  // When a run escalates before producing one (common on real runs), show the",
+        "  // baseline screenshot solo with an honest note instead of a blank 'After' pane.",
+        "  var _hasAfter=!!(msg.upgraded_url&&msg.upgraded_url!==msg.baseline_url);",
+        "  if(_hasAfter){",
+        "    html+='<div class=\"dl-sec-head\">Before &amp; after</div><div class=\"dl-ba-grid\">';",
+        "    html+='<div class=\"dl-ba-col\"><h4><span class=\"dl-ba-tag\">Before</span> \\u00b7 baseline</h4>';",
+        "    html+='<div class=\"dl-ba-shot\"><iframe class=\"dl-ba-frame\" scrolling=\"no\" src=\"'+escHtml(msg.baseline_url||'')+'\" title=\"Baseline\" loading=\"lazy\"></iframe></div></div>';",
+        "    html+='<div class=\"dl-ba-col\"><h4><span class=\"dl-ba-tag\" style=\"color:var(--slp-sage-dark)\">After</span> \\u00b7 upgraded</h4>';",
+        "    html+='<div class=\"dl-ba-shot\"><iframe class=\"dl-ba-frame\" scrolling=\"no\" src=\"'+escHtml(msg.upgraded_url||'')+'\" title=\"Upgraded\" loading=\"lazy\"></iframe></div></div>';",
+        "    html+='</div>';",
+        "  } else if(msg.baseline_url){",
+        "    html+='<div class=\"dl-sec-head\">Your screenshot</div>';",
+        "    html+='<div class=\"dl-ba-note\">No improved version was produced \\u2014 the loop escalated before it converged. Use the punch list above, then re-run.</div>';",
+        "    html+='<div class=\"dl-ba-shot\"><iframe class=\"dl-ba-frame\" scrolling=\"no\" src=\"'+escHtml(msg.baseline_url)+'\" title=\"Baseline\" loading=\"lazy\"></iframe></div>';",
+        "  }",
         "  // compact scorecard",
         "  var sc=p.scores||[];",
         "  if(sc.length){",
@@ -714,6 +1017,8 @@ def _script() -> str:
         "  html+='</div>';",
         "  resultsView.innerHTML=html;",
         "  window.__dlPayload=p;",
+        "  var bh=document.getElementById('dl-back-home');",
+        "  if(bh){bh.addEventListener('click',function(){showView('landing');loadHistory();});}",
         "  // wire actions",
         "  var cp=document.getElementById('dl-copy-prompt');",
         "  if(cp){cp.addEventListener('click',function(){copyText(buildPrompt(p,p.context||''),cp);});}",
@@ -731,44 +1036,107 @@ def _script() -> str:
         "    var f=fb.getAttribute('data-focus');",
         "    var opts={context:(currentOpts&&currentOpts.context)||'',audience:(currentOpts&&currentOpts.audience)||'',compare_url:(currentOpts&&currentOpts.compare_url)||''};",
         "    if(f){opts.focus=f;}",
-        "    startRun(currentRunId,opts);",
+        "    fb.disabled=true;",
+        "    fetch('/api/run/'+encodeURIComponent(currentRunId)+'/rerun',{method:'POST'})",
+        "      .then(function(r){if(!r.ok){throw new Error('Could not prepare a new run.');}return r.json();})",
+        "      .then(function(data){startRun(data.run_id,opts);})",
+        "      .catch(function(e){setStatus(e.message,true);fb.disabled=false;});",
         "  });});",
         "}",
         "",
+        "function openPastRun(runId){",
+        "  fetch('/api/run/'+encodeURIComponent(runId)).then(function(r){return r.json();}).then(function(msg){",
+        "    if(!msg||msg.error){setStatus('Could not open that run.',true);return;}",
+        "    if(!msg.payload||msg.payload.total===undefined){if(msg.report_url){window.location.assign(msg.report_url);}else{setStatus('No saved report is available for that run.',true);}return;}",
+        "    prevTotal=null;currentRunId=msg.run_id||runId;",
+        "    currentOpts={context:msg.payload.context||'',audience:msg.payload.audience||''};",
+        "    lastResult=msg;renderResults(msg);",
+        "    workingTab.setAttribute('disabled','');",
+        "    resultsTab.removeAttribute('disabled');showView('results');",
+        "  }).catch(function(){setStatus('Could not open that run.',true);});",
+        "}",
+        "function deleteRun(runId){",
+        "  fetch('/api/run/'+encodeURIComponent(runId),{method:'DELETE'}).then(function(r){return r.json();})",
+        "    .then(function(data){if(data.error){setStatus(data.error,true);return;}loadHistory();})",
+        "    .catch(function(){setStatus('Could not update history. Please try again.',true);});",
+        "}",
+        "function clearHistory(){",
+        "  fetch('/api/history/clear',{method:'POST'}).then(function(r){return r.json();})",
+        "    .then(function(data){if(data.error){setStatus(data.error,true);return;}loadHistory();})",
+        "    .catch(function(){setStatus('Could not update history. Please try again.',true);});",
+        "}",
         "function loadHistory(){",
         "  var listEl=document.getElementById('dl-history-list');",
         "  if(!listEl){return;}",
+        "  wireDashboardOnce();",
         "  fetch('/api/history').then(function(res){return res.json();}).then(function(data){",
-        "    var entries=data.entries||[];",
-        "    if(entries.length===0){",
-        "      listEl.className='dl-history-empty';listEl.style.textAlign='center';",
-        "      listEl.textContent='No past runs yet.';return;",
-        "    }",
-        "    listEl.className='dl-history-grid';listEl.style.textAlign='';",
-        "    var html='';",
-        "    for(var i=0;i<entries.length;i++){",
+        "    histEntries=data.entries||[];",
+        "    histById={};",
+        "    for(var h=0;h<histEntries.length;h++){histById[histEntries[h].run_id]=histEntries[h];}",
+        "    renderHistory();",
+        "  }).catch(function(){",
+        "    listEl.className='dl-history-empty';listEl.style.textAlign='center';",
+        "    listEl.textContent='Could not load history.';",
+        "  });",
+        "}",
+        "function wireDashboardOnce(){",
+        "  if(window.__dlDashWired){return;}",
+        "  window.__dlDashWired=true;",
+        "  var s=document.getElementById('dl-dash-search');",
+        "  if(s){s.addEventListener('input',function(){histQuery=(s.value||'').toLowerCase().trim();renderHistory();});}",
+        "  var chips=document.querySelectorAll('.dl-fchip');",
+        "  chips.forEach(function(c){c.addEventListener('click',function(){",
+        "    histFilter=c.getAttribute('data-filter')||'all';",
+        "    chips.forEach(function(x){x.classList.remove('dl-fchip-on');});",
+        "    c.classList.add('dl-fchip-on');renderHistory();",
+        "  });});",
+        "  var cl=document.getElementById('dl-history-clear');",
+        "  if(cl){cl.addEventListener('click',function(){if(window.confirm('Clear the runs list? Run files are kept on disk.')){clearHistory();}});}",
+        "}",
+        "function renderHistory(){",
+        "  var listEl=document.getElementById('dl-history-list');",
+        "  var countEl=document.getElementById('dl-dash-count');",
+        "  if(!listEl){return;}",
+        "  var total=histEntries.length;",
+        "  var entries=histEntries.filter(function(e){",
+        "    if(histFilter==='converged'&&!e.converged){return false;}",
+        "    if(histFilter==='escalated'&&e.converged){return false;}",
+        "    if(histQuery){var hay=((e.goal||'')+' '+(e.task_class||'')+' '+(e.kind||'')+' '+(e.run_id||'')).toLowerCase();if(hay.indexOf(histQuery)===-1){return false;}}",
+        "    return true;",
+        "  });",
+        "  if(countEl){countEl.textContent=total?(entries.length===total?(total+' run'+(total!==1?'s':'')):(entries.length+' of '+total)):'';}",
+        "  if(total===0){listEl.className='dl-history-empty';listEl.style.textAlign='center';listEl.textContent='No past runs yet.';return;}",
+        "  if(entries.length===0){listEl.className='dl-history-empty';listEl.style.textAlign='center';listEl.textContent='No runs match this filter.';return;}",
+        "  listEl.className='dl-history-grid';listEl.style.textAlign='';",
+        "  var html='';",
+        "  for(var i=0;i<entries.length;i++){",
         "      var e=entries[i];",
-        "      var dateStr=escHtml((e.ts||'').slice(0,10));",
+        "      var dateStr=escHtml(fmtWhen(e.ts));",
         "      var statusLabel=e.converged?'Converged':('Escalated'+(e.reason?(' ('+escHtml(e.reason)+')'):''));",
         "      var totalStr=(e.total===null||e.total===undefined)?'?':escHtml(e.total);",
-        "      var tc=escHtml(e.task_class||'\\u2014');",
-        "      var reportUrl=e.report_url||'#';",
+        "      var meta=escHtml(e.goal||e.task_class||'\\u2014');",
+        "      var kindStr=e.kind?('<span class=\"dl-hist-kind\">'+escHtml(e.kind)+'</span>'):'';",
         "      var col=e.converged?'var(--slp-sage-dark)':'#a4392a';",
-        "      html+='<a class=\"dl-history-card\" href=\"'+reportUrl+'\" target=\"_blank\" rel=\"noopener\">';",
+        "      var rid=escHtml(e.run_id);",
+        "      var reportUrl=e.report_url||'';",
+        "      html+='<div class=\"dl-history-card\" data-run=\"'+rid+'\">';",
         "      html+='<div style=\"display:flex;align-items:center;justify-content:space-between;gap:8px\">';",
         "      html+='<span style=\"font-family:var(--font-ui);font-weight:600;font-size:11px;letter-spacing:.1em;'+",
         "        'text-transform:uppercase;color:'+col+'\">'+statusLabel+'</span>';",
         "      html+='<span style=\"font-family:var(--font-display);font-weight:600;font-size:16px;'+",
         "        'color:var(--fg-1)\">'+totalStr+'/32</span></div>';",
-        "      html+='<div style=\"font-family:var(--font-body);font-size:13px;color:var(--fg-2)\">'+tc+'</div>';",
-        "      html+='<div style=\"font-family:var(--font-ui);font-size:11px;color:var(--fg-3)\">'+dateStr+'</div>';",
-        "      html+='</a>';",
+        "      html+='<div style=\"font-family:var(--font-body);font-size:13px;color:var(--fg-2)\">'+meta+'</div>';",
+        "      html+='<div style=\"display:flex;align-items:center;gap:8px\"><span style=\"font-family:var(--font-ui);font-size:11px;color:var(--fg-3)\">'+dateStr+'</span>'+kindStr+'</div>';",
+        "      html+='<div class=\"dl-hist-actions\">';",
+        "      html+='<button type=\"button\" class=\"dl-hist-open\" data-run=\"'+rid+'\">Open</button>';",
+        "      if(reportUrl){html+='<a class=\"dl-hist-link\" href=\"'+reportUrl+'\" target=\"_blank\" rel=\"noopener\">Report \\u2197</a>';}",
+        "      html+='<button type=\"button\" class=\"dl-hist-del\" data-run=\"'+rid+'\" title=\"Delete run + files\">\\u2715</button>';",
+        "      html+='</div></div>';",
         "    }",
-        "    listEl.innerHTML=html;",
-        "  }).catch(function(){",
-        "    listEl.className='dl-history-empty';listEl.style.textAlign='center';",
-        "    listEl.textContent='Could not load history.';",
-        "  });",
+        "  listEl.innerHTML=html;",
+        "  listEl.querySelectorAll('.dl-hist-open').forEach(function(b){b.addEventListener('click',function(){openPastRun(b.getAttribute('data-run'));});});",
+        "  listEl.querySelectorAll('.dl-hist-del').forEach(function(b){b.addEventListener('click',function(){",
+        "    if(window.confirm('Delete this run and its files? This cannot be undone.')){deleteRun(b.getAttribute('data-run'));}});});",
         "}",
         "",
         "function openSocket(runId,opts){",
@@ -786,14 +1154,16 @@ def _script() -> str:
         "      setProgress(1,1,'Complete');",
         "      progBar.className='dl-progress-bar '+(msg.converged?'dl-done':'dl-esc');",
         "      finalizeLog(msg.total,msg.verdict);",
-        "      if(msg.converged){setRunStatus('done','\\u2713 Done \\u2014 converged');}",
-        "      else{setRunStatus('done','\\u26a0 Done \\u2014 escalated ('+escHtml(msg.verdict||'unknown')+')');}",
+        "      var _doneTotal=(msg.total===null||msg.total===undefined)?'?':escHtml(msg.total);",
+        "      var _doneLabel='\\u2713 Done \\u2014 best '+_doneTotal+'/32'+(msg.verdict?(' ('+escHtml(msg.verdict)+')'):'');",
+        "      setRunStatus('done',_doneLabel);",
         "      setStatus('',false);",
         "      renderResults(msg);",
         "      var _t=(msg.payload&&msg.payload.total!==undefined&&msg.payload.total!==null)?msg.payload.total:msg.total;",
         "      prevTotal=_t;",
         "      resultsTab.removeAttribute('disabled');",
-        "      showView('results');",
+        "      var _wv=document.querySelector('[data-pw-view=\"working\"]');",
+        "      if(_wv&&!_wv.hidden){showView('results');}else{setStatus('Run finished \\u2014 open the Results tab to see the verdict.',false);}",
         "      loadHistory();",
         "    } else if(msg.type==='cancelled'){",
         "      setRunStatus('error','\\u25a0 Stopped');",
@@ -812,7 +1182,7 @@ def _script() -> str:
         "  workingTab.removeAttribute('disabled');",
         "  resultsTab.setAttribute('disabled','');",
         "  showView('working');",
-        "  logEl.innerHTML='';toolRows={};",
+        "  logEl.innerHTML='';toolRows={};clearAgentState();resetMilestones();",
         "  progBar.className='dl-progress-bar';progBar.style.width='0%';",
         "  progText.textContent='Starting\\u2026';progPct.textContent='';",
         "  setRunStatus('running');",
@@ -827,6 +1197,8 @@ def _script() -> str:
         "  }",
         "}",
         "if(stopBtn){stopBtn.addEventListener('click',stopRun);}",
+        "var homeBtn=document.getElementById('dl-home-btn');",
+        "if(homeBtn){homeBtn.addEventListener('click',function(){showView('landing');loadHistory();});}",
         "",
         "function uploadFile(file){",
         "  var isHtml=/\\.html?$/i.test(file.name||'');",
@@ -840,6 +1212,18 @@ def _script() -> str:
         "    .then(function(res){if(!res.ok){throw new Error('upload failed: '+res.status);}return res.json();})",
         "    .then(function(data){setStatus('',false);startRun(data.run_id,baseOpts());})",
         "    .catch(function(err){setStatus(String(err),true);});",
+        "}",
+        "",
+        "// Drop/paste/browse STAGE the input (preview + enable Analyze); they do NOT",
+        "// auto-start. The run begins only when the user presses Analyze -- so a goal",
+        "// added after dropping is captured, and an accidental drop never spends a run.",
+        "function stageImage(file){",
+        "  if(!file){return;}",
+        "  var isHtml=/\\.html?$/i.test(file.name||'');",
+        "  if(isHtml){loadHtmlFile(file);return;}",
+        "  if(file.type.indexOf('image/')!==0){setStatus('Please provide an image or .html file.',true);return;}",
+        "  pendingImage=file;showPreview(file);refreshDetect();",
+        "  setStatus('Screenshot ready \\u2014 add a goal (optional), then press Analyze.',false);",
         "}",
         "",
         "function getGoal(){return goalEl?goalEl.value.trim():'';}",
@@ -883,7 +1267,7 @@ def _script() -> str:
         "});",
         "",
         "if(browseBtn){browseBtn.addEventListener('click',function(){fileInput.click();});}",
-        "fileInput.addEventListener('change',function(e){if(e.target.files&&e.target.files[0]){uploadFile(e.target.files[0]);}});",
+        "fileInput.addEventListener('change',function(e){if(e.target.files&&e.target.files[0]){stageImage(e.target.files[0]);}});",
         "",
         "smart.addEventListener('focusin',function(){smart.classList.add('dl-focus');});",
         "smart.addEventListener('focusout',function(){smart.classList.remove('dl-focus');});",
@@ -895,20 +1279,20 @@ def _script() -> str:
         "});",
         "smart.addEventListener('drop',function(e){",
         "  var files=e.dataTransfer&&e.dataTransfer.files;",
-        "  if(files&&files[0]){uploadFile(files[0]);}",
+        "  if(files&&files[0]){stageImage(files[0]);}",
         "});",
         "document.addEventListener('paste',function(e){",
         "  var items=(e.clipboardData||window.clipboardData).items;",
         "  if(!items){return;}",
         "  for(var i=0;i<items.length;i++){",
-        "    if(items[i].type.indexOf('image')!==-1){uploadFile(items[i].getAsFile());e.preventDefault();break;}",
+        "    if(items[i].type.indexOf('image')!==-1){stageImage(items[i].getAsFile());e.preventDefault();break;}",
         "  }",
         "});",
         "",
         "function resetApp(){",
         "  if(currentSocket){try{currentSocket.close();}catch(e){}currentSocket=null;}",
         "  currentRunId=null;pendingImage=null;lastResult=null;currentOpts={};prevTotal=null;",
-        "  logEl.innerHTML='';toolRows={};",
+        "  logEl.innerHTML='';toolRows={};clearAgentState();resetMilestones();",
         "  preview.style.display='none';previewImg.src='';",
         "  inputEl.value='';fileInput.value='';if(goalEl){goalEl.value='';}if(contextEl){contextEl.value='';}if(audienceEl){audienceEl.value='';}if(compareEl){compareEl.value='';}",
         "  refreshDetect();setStatus('',false);",
@@ -957,18 +1341,12 @@ def build_landing_html() -> str:
         "</div>"
     )
     dims_section = (
-        '<div style="max-width:660px;margin:46px auto 0">'
-        '<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:18px">'
-        '<span style="display:block;width:30px;height:1px;background:var(--slp-amber)"></span>'
-        '<span style="font-family:var(--font-ui);font-weight:500;font-size:11px;letter-spacing:.24em;'
-        'text-transform:uppercase;color:var(--fg-3)">Judged on eight things</span>'
-        '<span style="display:block;width:30px;height:1px;background:var(--slp-amber)"></span>'
-        "</div>"
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border-1);'
-        'border:1px solid var(--border-1);border-radius:6px;overflow:hidden">'
+        '<details class="dl-dims-disclosure">'
+        '<summary class="dl-dims-summary">Judged on eight things</summary>'
+        '<div class="dl-dims-body">'
         + _dims_grid()
         + "</div>"
-        "</div>"
+        "</details>"
     )
     landing_view = (
         '<div data-pw-view="landing">'

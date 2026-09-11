@@ -4,6 +4,9 @@
 - [HANDOFF.md](./HANDOFF.md) — comprehensive handoff: everything changed this session,
   file-by-file map, data model, how to run, verification, screenshots, and open items.
 
+## Run management
+- [run-history.md](./run-history.md) — saved results, progress, storage, and verification.
+
 ## Product & workflow
 - [persona-and-user-stories.md](./persona-and-user-stories.md) — who we serve (Maya, the
   solo builder), the coin-operated user stories, and the gap analysis vs. today's app.

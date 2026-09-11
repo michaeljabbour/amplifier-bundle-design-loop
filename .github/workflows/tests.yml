@@ -1,0 +1,23 @@
+name: Tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  deterministic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test and app dependencies
+        run: |
+          python -m pip install pytest pytest-asyncio httpx fastapi 'uvicorn[standard]' python-multipart pyyaml amplifier-core
+          python -m pip install 'amplifier-foundation @ git+https://github.com/microsoft/amplifier-foundation@0e0ba726c46adfe8997f172e708d0a3120f634e2'
+          python -m pip install -e modules/tool-render -e modules/tool-render-report -e modules/tool-design-controller -e modules/tool-design-ledger -e modules/tool-design-lints -e modules/tool-target-state
+          python -m playwright install --with-deps chromium
+      - name: Run deterministic suite
+        run: python -m pytest modules tests -q

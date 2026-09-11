@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -21,8 +22,10 @@ from fastapi import FastAPI, Form, UploadFile, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from amplifier_module_tool_render_report.history import filter_history, read_history
 
 from .landing import build_landing_html
+from .storage import ACTIVE_RUNS, DURABLE_ROOT, safe_run_dir
 from .ws_handler import handle_websocket
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s: %(message)s")
@@ -31,7 +34,6 @@ logger = logging.getLogger(__name__)
 # Durable output root -- same location amplifier_module_tool_render_report's
 # render_demo.py and the real design-converge.yaml recipe already write to,
 # so runs created here interleave naturally with runs created by the CLI.
-DURABLE_ROOT = Path.home() / "Downloads" / "design-loop"
 RUNS_DIR = DURABLE_ROOT / "runs"
 _HISTORY_FILE = DURABLE_ROOT / "history.jsonl"
 
@@ -98,33 +100,41 @@ def _dry_mode() -> bool:
 @app.get("/api/preflight")
 async def api_preflight() -> JSONResponse:
     """Report which backend a run will use, so the UI can label the mode and so
-    a user opting into the real critique (DESIGN_LOOP_DRY=0) gets a clear signal
-    up front instead of a mid-run import error.
+    a user opting into live critique (DESIGN_LOOP_DRY=0) can see whether the
+    CLI used by the runner is present. This does not validate provider credentials.
 
     - dry_mode: scripted zero-cost transcript (still runs the REAL deterministic
       ground-truth audit on the actual page).
-    - foundation_installed: whether `amplifier_foundation` can be imported (the
-      real subjective critic path).
+    - cli_available: whether the runner can locate the Amplifier executable.
+    - foundation_installed: legacy informational field for the app interpreter.
     """
     import importlib.util
 
     dry = _dry_mode()
     foundation = importlib.util.find_spec("amplifier_foundation") is not None
+    from .real_runner import _resolve_amplifier_bin
+
+    try:
+        _resolve_amplifier_bin()
+        cli_available = True
+    except RuntimeError:
+        cli_available = False
     if dry:
         message = "DRY mode: scripted transcript, zero cost. Ground-truth audit is real."
-    elif foundation:
-        message = "LIVE mode: real critique via amplifier_foundation (spends tokens)."
+    elif cli_available:
+        message = "LIVE mode: Amplifier CLI found. Runs use its provider configuration and spend tokens."
     else:
         message = (
-            "LIVE mode requested but amplifier_foundation isn't installed -- runs "
-            "will error. Install it (see app/real_runner.py) or set DESIGN_LOOP_DRY=1."
+            "LIVE mode requested but the Amplifier CLI wasn't found. "
+            "Install amplifier or set DESIGN_LOOP_DRY=1."
         )
     return JSONResponse(
         {
             "dry_mode": dry,
             "foundation_installed": foundation,
-            "real_available": (not dry) and foundation,
-            "mode": "dry" if dry else ("live" if foundation else "live-unavailable"),
+            "cli_available": cli_available,
+            "real_available": (not dry) and cli_available,
+            "mode": "dry" if dry else ("live" if cli_available else "live-unavailable"),
             "message": message,
         }
     )
@@ -213,18 +223,36 @@ async def api_source(body: SourceRequest) -> JSONResponse:
     return JSONResponse({"run_id": run_id, "kind": kind})
 
 
+def _safe_run_dir(run_id: str) -> Path | None:
+    """Resolve run_id -> run dir, refusing anything that escapes RUNS_DIR
+    (path-traversal guard) or isn't a plain run token."""
+    return safe_run_dir(RUNS_DIR, run_id)
+
+
+def _run_urls(run_id: str, run_dir: Path) -> dict[str, Any]:
+    """Which artifacts actually exist on disk for this run."""
+    def _u(name: str) -> str | None:
+        artifact = run_dir / name
+        return f"/runs/{run_id}/{name}" if artifact.is_file() and not artifact.is_symlink() else None
+
+    return {
+        "report_url": _u("report.html"),
+        "upgraded_url": _u("upgraded.html"),
+        "baseline_url": _u("baseline.html"),
+        "annotated_url": _u("annotated.html"),
+        "result_url": _u("result.json"),
+    }
+
+
 @app.get("/api/history")
 async def api_history() -> JSONResponse:
-    """Return the last <=20 durable runs from history.jsonl, newest first.
-
-    Each entry mirrors what amplifier_module_tool_render_report.template.render()
-    appends: run_id, ts, task_class, total, converged, reason -- plus a
-    report_url this app can link to directly (served via the /runs mount).
-    """
+    """Return the last <=50 durable runs from history.jsonl, newest first,
+    enriched with input kind/goal and which artifacts exist so the client can
+    reopen, link to, or delete each run."""
     entries: list[dict[str, Any]] = []
     if _HISTORY_FILE.exists():
-        lines = _HISTORY_FILE.read_text(encoding="utf-8").splitlines()
-        for line in lines[-20:]:
+        lines = read_history(_HISTORY_FILE)
+        for line in lines[-50:]:
             line = line.strip()
             if not line:
                 continue
@@ -232,20 +260,119 @@ async def api_history() -> JSONResponse:
                 obj = json.loads(line)
             except Exception:
                 continue
+            if not isinstance(obj, dict):
+                continue
             run_id = obj.get("run_id", "")
-            entries.append(
-                {
-                    "run_id": run_id,
-                    "ts": obj.get("ts", ""),
-                    "task_class": obj.get("task_class", ""),
-                    "total": obj.get("total"),
-                    "converged": bool(obj.get("converged", False)),
-                    "reason": obj.get("reason", ""),
-                    "report_url": f"/runs/{run_id}/report.html" if run_id else "",
-                }
-            )
+            run_dir = _safe_run_dir(run_id)
+            if run_dir is None:
+                continue
+            kind = goal = ""
+            if run_dir and (run_dir / "meta.json").exists():
+                try:
+                    m = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
+                    kind = m.get("kind", "")
+                    goal = m.get("goal", "") or m.get("context", "")
+                except Exception:
+                    pass
+            entry = {
+                "run_id": run_id,
+                "ts": obj.get("ts", ""),
+                "task_class": obj.get("task_class", ""),
+                "total": obj.get("total"),
+                "converged": bool(obj.get("converged", False)),
+                "reason": obj.get("reason", ""),
+                "kind": kind,
+                "goal": goal,
+                "report_url": None,
+            }
+            if run_dir and run_dir.exists():
+                entry.update(_run_urls(run_id, run_dir))
+            entries.append(entry)
     entries.reverse()  # newest first
     return JSONResponse({"entries": entries})
+
+
+@app.get("/api/run/{run_id}")
+async def api_run(run_id: str) -> JSONResponse:
+    """Return a past run's saved result snapshot so it can be reopened in-app.
+
+    Falls back to a minimal payload (just the artifact links) for older runs
+    that predate result.json.
+    """
+    run_dir = _safe_run_dir(run_id)
+    if run_dir is None or not run_dir.is_dir():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    result_path = run_dir / "result.json"
+    if result_path.exists():
+        try:
+            msg = json.loads(result_path.read_text(encoding="utf-8"))
+            if isinstance(msg, dict) and isinstance(msg.get("payload"), dict):
+                msg.update(type="result", run_id=run_id)
+                msg.update(_run_urls(run_id, run_dir))
+                return JSONResponse(msg)
+        except Exception:
+            pass
+    # Fallback: synthesize from whatever artifacts exist.
+    msg: dict[str, Any] = {"type": "result", "run_id": run_id, "payload": {}}
+    msg.update({k: v for k, v in _run_urls(run_id, run_dir).items() if v})
+    return JSONResponse(msg)
+
+
+@app.delete("/api/run/{run_id}")
+async def api_run_delete(run_id: str) -> JSONResponse:
+    """Delete one run: remove its directory (artifacts) and drop its
+    history.jsonl line(s). Scoped to RUNS_DIR only."""
+    run_dir = _safe_run_dir(run_id)
+    if run_dir is None:
+        return JSONResponse({"error": "bad run_id"}, status_code=400)
+    if run_id in ACTIVE_RUNS:
+        return JSONResponse({"error": "Stop the active run before deleting it."}, status_code=409)
+    removed_dir = False
+    if run_dir.exists():
+        try:
+            shutil.rmtree(run_dir)
+        except OSError:
+            logger.exception("Could not delete run %s", run_id)
+            return JSONResponse({"error": "Could not remove run files."}, status_code=500)
+        removed_dir = True
+    def keep(line: str) -> bool:
+        try:
+            entry = json.loads(line)
+            return not isinstance(entry, dict) or entry.get("run_id") != run_id
+        except ValueError:
+            return True
+
+    dropped = filter_history(_HISTORY_FILE, keep)
+    logger.info("Deleted run %s (dir=%s, history lines=%d)", run_id, removed_dir, dropped)
+    return JSONResponse({"ok": True, "removed_dir": removed_dir, "dropped": dropped})
+
+
+@app.post("/api/run/{run_id}/rerun")
+async def api_run_rerun(run_id: str) -> JSONResponse:
+    """Copy only the input into a fresh run; keep earlier verdicts intact."""
+    previous = _safe_run_dir(run_id)
+    if previous is None or not (previous / "meta.json").is_file():
+        return JSONResponse({"error": "Original input is unavailable."}, status_code=404)
+    new_id = uuid.uuid4().hex[:12]
+    destination = RUNS_DIR / new_id
+    destination.mkdir()
+    try:
+        for source in previous.iterdir():
+            if source.name in {"meta.json", "source.txt", "source_brief.txt"} or source.name.startswith("input."):
+                if source.is_file() and not source.is_symlink():
+                    shutil.copy2(source, destination / source.name)
+    except OSError:
+        shutil.rmtree(destination)
+        raise
+    return JSONResponse({"run_id": new_id})
+
+
+@app.post("/api/history/clear")
+async def api_history_clear() -> JSONResponse:
+    """Clear the Past-verdicts index (history.jsonl). Non-destructive to run
+    directories/artifacts -- use DELETE /api/run/{id} to remove those."""
+    n = filter_history(_HISTORY_FILE, lambda line: False)
+    return JSONResponse({"ok": True, "cleared": n})
 
 
 @app.websocket("/ws")

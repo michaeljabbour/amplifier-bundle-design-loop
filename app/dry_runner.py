@@ -33,7 +33,7 @@ _UPGRADED = _FIXTURES / "upgraded.html"
 # Same durable location main.DURABLE_ROOT points at (kept as a local constant,
 # not an import from .main, to avoid a main <-> ws_handler <-> dry_runner
 # import cycle -- main imports ws_handler imports dry_runner).
-_DURABLE_ROOT = pathlib.Path.home() / "Downloads" / "design-loop"
+from .storage import DURABLE_ROOT as _DURABLE_ROOT
 
 # Human-readable label per input kind, used in the first log line so the
 # transcript honestly reflects what was actually submitted (image upload,
@@ -354,6 +354,8 @@ async def run_dry(
         raise RuntimeError(f"demo fixtures missing under {_FIXTURES}")
 
     chosen = _pick_variant(variant)
+    state = _build_dry_state(run_id, chosen)
+    _apply_focus(state, focus)
 
     label = _KIND_LABELS.get(kind, kind)
     display_value = _source_display(kind, source)
@@ -401,6 +403,36 @@ async def run_dry(
         )
         await asyncio.sleep(0.2)
 
+    baseline_rec = state["records"][0]
+    baseline_scores = baseline_rec.get("scores") or {}
+    baseline_total = sum(v for v in baseline_scores.values() if isinstance(v, int))
+    await hook.milestone(
+        "render",
+        "Rendered your input",
+        detail="Objective lint pass ran on the baseline render (DRY MODE -- illustrative numbers: "
+        "62 elements, 0.31 text/element ratio).",
+    )
+    await asyncio.sleep(0.15)
+    await hook.milestone(
+        "baseline",
+        f"Baseline scored \u2014 {baseline_total}/32",
+        detail="DRY mode: illustrative baseline scores; no model critique was run.",
+        scores=baseline_scores,
+        total=baseline_total,
+    )
+    await asyncio.sleep(0.15)
+    plan_items = [
+        (fb.get("directive") or (fb.get("issue", "") + " -> " + fb.get("fix", "")))
+        for fb in (baseline_rec.get("fix_batch") or [])
+    ]
+    await hook.milestone(
+        "plan",
+        f"Planner proposed {len(plan_items)} fix{'es' if len(plan_items) != 1 else ''}",
+        detail="Highest-leverage, lowest-regression directives for the maker.",
+        items=plan_items,
+    )
+    await asyncio.sleep(0.15)
+
     await _pass(
         hook,
         pass_no=1,
@@ -411,6 +443,20 @@ async def run_dry(
         gate_text="BASELINE -> continue",
         step_delay=0.45,
     )
+    await hook.milestone(
+        "make",
+        "Built an improved version",
+        detail="The maker applied the planner's directives to a fresh candidate page.",
+    )
+    await asyncio.sleep(0.15)
+
+    # First SCORED pass (pass 2 in both scripted variants -- pass 1 above was
+    # lint-rejected and never reached the critic). Mirrors the real backend:
+    # the "score" milestone only fires the first time scores.json is written,
+    # which only happens after a lint-PASS.
+    first_scored = state["records"][1]
+    first_scores = first_scored.get("scores") or {}
+    first_total = sum(v for v in first_scores.values() if isinstance(v, int))
 
     if chosen == "escalated":
         await _pass(
@@ -423,6 +469,15 @@ async def run_dry(
             gate_text="NEW_BEST -> PLAN (small gain, keep climbing)",
             step_delay=0.45,
         )
+        await hook.milestone(
+            "score",
+            f"Re-scored \u2014 {first_total}/32",
+            detail="The blind critic scored the new candidate (never saw the maker's HTML).",
+            scores=first_scores,
+            prev_scores=baseline_scores,
+            total=first_total,
+        )
+        await asyncio.sleep(0.15)
         await _pass(
             hook,
             pass_no=3,
@@ -448,6 +503,15 @@ async def run_dry(
             gate_text="NO_GAIN -> PLAN (regression on restraint, retry from best-so-far)",
             step_delay=0.45,
         )
+        await hook.milestone(
+            "score",
+            f"Re-scored \u2014 {first_total}/32",
+            detail="The blind critic scored the new candidate (never saw the maker's HTML).",
+            scores=first_scores,
+            prev_scores=baseline_scores,
+            total=first_total,
+        )
+        await asyncio.sleep(0.15)
         await _pass(
             hook,
             pass_no=3,
@@ -460,9 +524,21 @@ async def run_dry(
         )
         final_msg = "Converged: champion scored 29/32 (bar_met). Report ready."
 
+    from .results import friendly_reason_text
+
+    _gate = state.get("gate") or {}
+    _champ_total = (state.get("champion") or {}).get("total")
+    await hook.milestone(
+        "decide",
+        "Decision: "
+        + friendly_reason_text(
+            _gate.get("reason", ""), total=_champ_total, bar=26, passes=_TOTAL_PASSES
+        ),
+        detail=f"gate action={_gate.get('action', '')}, reason={_gate.get('reason', '')}",
+        total=_champ_total,
+    )
+
     await hook.tool_pre("render_report", {"run_id": run_id})
-    state = _build_dry_state(run_id, chosen)
-    _apply_focus(state, focus)
     # durable_base set (was None) so every dry run also appends a
     # history.jsonl entry under ~/Downloads/design-loop, exactly like a real
     # design-converge.yaml run's render_report finalize step would. Because

@@ -1454,10 +1454,11 @@ def render(
             "upgraded_path":_durable_upgraded_path,
             "baseline_path":_durable_baseline_path,
         }
-        with open(_history_file, "a", encoding="utf-8") as _hf:
-            _hf.write(_json.dumps(_entry) + "\n")
+        from .history import append_history
+
+        _history_lines = append_history(_history_file, _json.dumps(_entry))
         _all: list = []
-        for _ln in _history_file.read_text(encoding="utf-8").splitlines():
+        for _ln in _history_lines:
             _ln = _ln.strip()
             if _ln:
                 try:
