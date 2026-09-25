@@ -46,7 +46,12 @@ context:
   working_head_path: ""      # ABSOLUTE path to the HTML the maker edits from (= current best)
   best_scores_path: ""       # file holding the 8-dim best scores JSON, or literal null
   pass_dir: ""               # ABSOLUTE scratch dir for THIS pass (files are the data contract)
-  bundle_ref: ""             # passed to nested `inv amplifier tool invoke --bundle` (empty = auto-detect)
+  # passed to nested `inv amplifier tool invoke --bundle`. Defaults to the
+  # tools-only companion behavior (see design-converge.yaml's bundle_ref
+  # comment); design-converge.yaml forwards its own bundle_ref into this
+  # sub-recipe's context, so in practice this default is only used when
+  # design-pass.yaml is invoked standalone.
+  bundle_ref: "git+https://github.com/michaeljabbour/amplifier-bundle-design-loop@main#subdirectory=behaviors/design-loop-recipe-tools.yaml"
   tau: "0"                   # MACA regression tolerance
   prior_lint_reasons: ""     # deterministic lint failure reasons
   brief: ""                  # OPTIONAL free-text design intent from the app UI; secondary to fix_batch directives -- the maker is intentionally rubric-blind

@@ -10,6 +10,7 @@ REPO = pathlib.Path(__file__).parents[1]
 BUNDLE = REPO / "bundle.md"
 BEHAVIOR = REPO / "behaviors" / "design-loop.yaml"
 FULL_BEHAVIOR = REPO / "behaviors" / "design-loop-full.yaml"
+RECIPE_TOOLS_BEHAVIOR = REPO / "behaviors" / "design-loop-recipe-tools.yaml"
 FOUNDATION_SOURCE = "git+https://github.com/microsoft/amplifier-foundation@main"
 DESIGN_INTELLIGENCE_SOURCE = (
     "git+https://github.com/microsoft/amplifier-bundle-design-intelligence"
@@ -89,10 +90,35 @@ def test_behavior_is_pure_yaml_and_owns_operational_configuration():
         "behavior must be pure YAML, not markdown frontmatter"
     )
     assert document["bundle"]["name"] == "design-loop-behavior"
-    assert document["bundle"]["version"] == "0.2.0"
+    assert document["bundle"]["version"] == "0.3.0"
     # design-intelligence is opt-in (behaviors/design-loop-full.yaml): nothing
     # here depends on it and its agent catalog costs tokens on every request.
     assert document["includes"] == [{"bundle": RECIPES_SOURCE}]
+
+
+def test_behavior_mounts_no_tools():
+    """The 6 deterministic tools no longer live on the composed behavior --
+    they cost real per-request schema footprint. design-judge carries its own
+    3 (agent-scoped, agents/design-judge.md); the recipe's bash steps resolve
+    the rest via behaviors/design-loop-recipe-tools.yaml (bundle_ref)."""
+    document = _yaml(BEHAVIOR)
+    assert "tools" not in document
+
+
+def test_recipe_tools_behavior_declares_all_local_tools():
+    document = _yaml(RECIPE_TOOLS_BEHAVIOR)
+    tools = document["tools"]
+    assert tools == [
+        {"module": name, "source": f"../modules/{name}"} for name in TOOL_NAMES
+    ]
+    assert "agents" not in document
+    assert "context" not in document
+
+
+def test_design_judge_declares_its_own_agent_scoped_tools():
+    fm = yaml.safe_load(_frontmatter(REPO / "agents" / "design-judge.md"))
+    judge_tools = {t["module"] for t in fm["tools"]}
+    assert judge_tools == {"tool-render", "tool-target-state", "tool-render-report"}
 
 
 def test_full_behavior_opts_into_design_intelligence():
@@ -103,13 +129,6 @@ def test_full_behavior_opts_into_design_intelligence():
         {"bundle": DESIGN_INTELLIGENCE_SOURCE},
     ]
     assert not {"tools", "agents", "context"} & set(document)
-
-
-def test_behavior_declares_all_local_tools_with_behavior_relative_sources():
-    tools = _yaml(BEHAVIOR)["tools"]
-    assert tools == [
-        {"module": name, "source": f"../modules/{name}"} for name in TOOL_NAMES
-    ]
 
 
 def test_behavior_wires_all_design_loop_agents_and_awareness_context():
@@ -168,12 +187,10 @@ def test_public_foundation_load_composes_behavior_offline(tmp_path: pathlib.Path
     bundle = asyncio.run(load_bundle(str(BUNDLE), registry=registry))
     root_instruction = BUNDLE.read_text(encoding="utf-8").split("---", 2)[2].strip()
     assert bundle.instruction == root_instruction
-    loaded_tools = {
-        tool["module"]: pathlib.Path(tool["source"]) for tool in bundle.tools
-    }
-    assert set(TOOL_NAMES) <= set(loaded_tools)
-    for name in TOOL_NAMES:
-        assert loaded_tools[name] == (REPO / "modules" / name).resolve()
+    # The composed behavior mounts no tools of its own (see
+    # test_behavior_mounts_no_tools); design-judge carries its 3 agent-scoped
+    # tools in its own frontmatter, mounted only in its own spawned session.
+    assert not bundle.tools
     assert set(AGENT_NAMES) <= set(bundle.agents)
     for name in AGENT_NAMES:
         assert bundle.agents[name], f"{name} agent metadata did not resolve"
@@ -255,4 +272,6 @@ def test_full_behavior_composes_design_loop_plus_design_intelligence(
     full = asyncio.run(load_bundle(str(FULL_BEHAVIOR), registry=registry))
     assert set(AGENT_NAMES) <= set(full.agents)
     assert "fixture-design-intelligence:art-director" in full.agents
-    assert set(TOOL_NAMES) <= {tool["module"] for tool in full.tools}
+    # No tools composed here either -- design-judge's 3 are agent-scoped, and
+    # the recipe's remaining 3 resolve via behaviors/design-loop-recipe-tools.yaml.
+    assert not full.tools

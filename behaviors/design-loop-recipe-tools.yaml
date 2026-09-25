@@ -1,0 +1,27 @@
+bundle:
+  name: design-loop-recipe-tools-behavior
+  version: 0.1.0
+  namespace_root: ..
+  description: >-
+    Tools-only bundle for the governed design-converge recipe (bash steps call
+    `amplifier tool invoke ... --bundle <this>`). Not meant to be composed
+    directly onto a session -- it carries zero agents/context, and mounting it
+    onto a session would reintroduce the 6-tool-schema footprint that
+    behaviors/design-loop.yaml deliberately avoids. Referenced instead via the
+    `bundle_ref` default in recipes/design-converge.yaml and
+    recipes/design-pass.yaml, so the recipe resolves its own tools regardless
+    of what the calling session composed.
+
+tools:
+  - module: tool-render
+    source: ../modules/tool-render
+  - module: tool-target-state
+    source: ../modules/tool-target-state
+  - module: tool-render-report
+    source: ../modules/tool-render-report
+  - module: tool-design-lints
+    source: ../modules/tool-design-lints
+  - module: tool-design-ledger
+    source: ../modules/tool-design-ledger
+  - module: tool-design-controller
+    source: ../modules/tool-design-controller

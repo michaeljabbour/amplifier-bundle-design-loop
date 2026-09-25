@@ -76,7 +76,12 @@ context:
 
   # --- plumbing (use ABSOLUTE paths; no ~ — recipe templating does not expanduser) ---
   work_dir: "/tmp/design-loop/r-local"  # run scratch + outputs
-  bundle_ref: ""             # nested `inv amplifier tool invoke --bundle` (empty = auto-detect)
+  # nested `inv amplifier tool invoke --bundle`. Defaults to the tools-only
+  # companion behavior so this recipe resolves render/lints/ledger/controller
+  # regardless of what the calling session composed (behaviors/design-loop.yaml
+  # mounts no tools of its own -- see that file's header comment). Override to
+  # "" to fall back to ambient auto-detect, or to a local path during dev.
+  bundle_ref: "git+https://github.com/michaeljabbour/amplifier-bundle-design-loop@main#subdirectory=behaviors/design-loop-recipe-tools.yaml"
 
   # --- loop state (initialised here; mutated by the loop's update_context) ---
   loop_action: "PLAN"        # gate action; while/break read this

@@ -8,6 +8,18 @@ meta:
     governed convergence to a bar, run recipe design-loop:recipes/design-converge.yaml.
 
 model_role: vision
+
+# Agent-scoped tools: these mount ONLY in design-judge's own spawned session,
+# not in the parent session that delegates to it. This keeps the composing
+# behavior (behaviors/design-loop.yaml) free of tool-schema footprint --see
+# README.md "Per-request footprint".
+tools:
+  - module: tool-render
+    source: ../modules/tool-render
+  - module: tool-target-state
+    source: ../modules/tool-target-state
+  - module: tool-render-report
+    source: ../modules/tool-render-report
 ---
 
 # design-judge
