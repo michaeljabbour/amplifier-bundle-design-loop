@@ -294,19 +294,13 @@ class DesignControllerTool:
 
     @property
     def description(self) -> str:
+        # Kept terse on purpose: every mounted tool's description + schema is
+        # sent on every request. Semantics live in the functions below.
         return (
-            "Deterministic MACA accept/reject and stopping-rule gate for the design harness. "
-            "Stdlib only — no LLM, no I/O, no external deps. Stateless: call it once per "
-            "design pass and act on the returned decision. "
-            "\n\nop='evaluate': compare candidate_scores (8-dim int dict) against best_scores "
-            "(8-dim dict or null). Returns decision ∈ {NEW_BEST, NO_GAIN, REGRESSION, INVALID} "
-            "plus worst_dim, worst, total, regression_flags. "
-            "Inputs: candidate_scores, candidate_hard_fail, best_scores, "
-            "optional no_regress_dims (default=all 8), optional tau (default=0). "
-            "\n\nop='gate': evaluate stopping rules. Returns action ∈ {DONE, ESCALATE, PLAN, "
-            "ROLLBACK} plus reason. "
-            "Inputs: best_scores, bar, floors (int or per-dim dict), budget_remaining, "
-            "recent_improvements (list), k, epsilon, last_decision, target_retried."
+            "Deterministic, stateless design-harness decision core (no LLM). "
+            "op=evaluate: MACA compare candidate_scores vs best_scores -> "
+            "NEW_BEST|NO_GAIN|REGRESSION|INVALID. "
+            "op=gate: stopping rules -> DONE|ESCALATE|PLAN|ROLLBACK."
         )
 
     @property
@@ -315,73 +309,46 @@ class DesignControllerTool:
             "type": "object",
             "required": ["op"],
             "properties": {
-                "op": {
-                    "type": "string",
-                    "enum": ["evaluate", "gate"],
-                    "description": "Operation to perform: 'evaluate' (MACA) or 'gate' (stopping rules).",
-                },
+                "op": {"type": "string", "enum": ["evaluate", "gate"]},
                 # --- evaluate operands ---
                 "candidate_scores": {
                     "type": "object",
-                    "description": (
-                        "8-dim score dict for the candidate design. "
-                        "Keys: clarity, elegance, restraint, empowerment, agency, ease, character, point. "
-                        "Values: int 0–4."
-                    ),
-                    "properties": {d: {"type": "integer", "minimum": 0, "maximum": 4} for d in DIMS},
+                    "description": "Int 0-4 for each of: " + ", ".join(DIMS) + ".",
+                    "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 4},
                 },
                 "candidate_hard_fail": {
                     "type": "boolean",
-                    "description": "Output of the lint gate; True forces INVALID decision.",
+                    "description": "Lint hard-fail; true -> INVALID.",
                 },
-                "best_scores": {
-                    "description": "Current champion 8-dim score dict, or null if no best yet.",
-                },
+                "best_scores": {"description": "Champion 8-dim scores or null."},
                 "no_regress_dims": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Dim names protected against regression. Defaults to all 8.",
+                    "description": "Default: all 8 dims.",
                 },
                 "tau": {
                     "type": "integer",
                     "default": 0,
-                    "description": "Regression tolerance: fires only if candidate < best - tau.",
+                    "description": "Regression tolerance.",
                 },
                 # --- gate operands ---
-                "bar": {
-                    "type": "integer",
-                    "description": "Target total score threshold for DONE 'bar_met'.",
-                },
-                "floors": {
-                    "description": (
-                        "Per-dim minimum score. An int applies uniformly to all dims; "
-                        "a dict specifies per-dim values."
-                    ),
-                },
-                "budget_remaining": {
-                    "type": "integer",
-                    "description": "Remaining design passes. 0 or negative → budget_exhausted.",
-                },
+                "bar": {"type": "integer", "description": "Target total."},
+                "floors": {"description": "Per-dim minimum: int (all dims) or dict."},
+                "budget_remaining": {"type": "integer"},
                 "recent_improvements": {
                     "type": "array",
                     "items": {"type": "number"},
-                    "description": "Per-pass worst-dim improvement over recent passes (plateau window).",
+                    "description": "Worst-dim gains, recent passes.",
                 },
-                "k": {
-                    "type": "integer",
-                    "description": "Plateau detection window: look at the last k improvements.",
-                },
-                "epsilon": {
-                    "type": "number",
-                    "description": "Improvement threshold; < epsilon counts as a flat pass.",
-                },
+                "k": {"type": "integer", "description": "Plateau window."},
+                "epsilon": {"type": "number", "description": "Flat-pass threshold."},
                 "last_decision": {
                     "type": "string",
-                    "description": "Most recent evaluate() decision (NEW_BEST / NO_GAIN / REGRESSION / INVALID).",
+                    "description": "Last evaluate decision.",
                 },
                 "target_retried": {
                     "type": "boolean",
-                    "description": "True if a rollback for the current regression was already attempted.",
+                    "description": "Rollback already attempted.",
                 },
             },
         }

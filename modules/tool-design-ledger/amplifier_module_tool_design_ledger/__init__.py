@@ -53,8 +53,8 @@ class DesignLedgerTool:
     """
 
     def __init__(self, ledger_dir: Path) -> None:
+        # Directory is created lazily on first append (no session-start I/O).
         self._ledger_dir = ledger_dir
-        self._ledger_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------ protocol
 
@@ -64,14 +64,13 @@ class DesignLedgerTool:
 
     @property
     def description(self) -> str:
+        # Terse on purpose: sent on every request. See class docstring.
         return (
-            "Durable append-only cross-run design ledger persisted as JSONL. "
-            "op=append: persist a record (required: run_id, task_class, pass, outcome; "
-            "reject_reason required when outcome != 'accepted'; scores may be null). "
-            "op=query: filter records by task_class + optional signature/rubric_version/outcome. "
-            "op=best: return the accepted record with highest (worst_dim_score, total) for task_class. "
-            "op=dead_fixes: return strategy_tags/fix_ids of non-accepted records for task_class+signature. "
-            "Never raises; all failures surface as success=False with error dict."
+            "Append-only cross-run design ledger (JSONL). "
+            "op=append record{run_id,task_class,pass,outcome,reject_reason if not accepted}; "
+            "op=query task_class [+signature,rubric_version,outcome]; "
+            "op=best task_class -> accepted record with max (worst_dim, total); "
+            "op=dead_fixes task_class+signature -> failed strategy_tags/fix_ids."
         )
 
     @property
@@ -79,39 +78,12 @@ class DesignLedgerTool:
         return {
             "type": "object",
             "properties": {
-                "op": {
-                    "type": "string",
-                    "enum": ["append", "query", "best", "dead_fixes"],
-                    "description": "Operation to perform.",
-                },
-                "record": {
-                    "type": "object",
-                    "description": (
-                        "Record to append (op=append). "
-                        "Required fields: run_id, task_class, pass, outcome. "
-                        "reject_reason required when outcome != 'accepted'. "
-                        "scores may be null."
-                    ),
-                },
-                "task_class": {
-                    "type": "string",
-                    "description": "Task class identifier (required for query, best, dead_fixes).",
-                },
-                "signature": {
-                    "type": "string",
-                    "description": (
-                        "Design signature filter "
-                        "(optional for query; required for dead_fixes)."
-                    ),
-                },
-                "rubric_version": {
-                    "type": "string",
-                    "description": "Rubric version filter (optional for query and best).",
-                },
-                "outcome": {
-                    "type": "string",
-                    "description": "Outcome filter (optional for query).",
-                },
+                "op": {"type": "string", "enum": ["append", "query", "best", "dead_fixes"]},
+                "record": {"type": "object"},
+                "task_class": {"type": "string"},
+                "signature": {"type": "string"},
+                "rubric_version": {"type": "string"},
+                "outcome": {"type": "string"},
             },
             "required": ["op"],
         }
@@ -361,7 +333,6 @@ async def mount(coordinator: Any, config: dict[str, Any] | None = None) -> Desig
     cfg = config or {}
     ledger_dir_str: str = cfg.get("ledger_dir", "~/.amplifier/design-ledger")
     ledger_dir = Path(ledger_dir_str).expanduser()
-    ledger_dir.mkdir(parents=True, exist_ok=True)
 
     tool = DesignLedgerTool(ledger_dir)
     await coordinator.mount("tools", tool, name=tool.name)   # Iron Law

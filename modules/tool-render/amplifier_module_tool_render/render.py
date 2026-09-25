@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from playwright.async_api import async_playwright
-
 _VIEWPORT = {"width": 1280, "height": 800}
 
 
@@ -34,6 +32,10 @@ async def render_to_png(url: str, out_path: Path) -> Path:
     Exception
         Any Playwright-level error (e.g. page not found for a ``file://`` URL).
     """
+    # Imported lazily: playwright costs ~0.1-0.2 s to import, which would
+    # otherwise be paid at every session start when this tool is mounted.
+    from playwright.async_api import async_playwright
+
     async with async_playwright() as pw:
         browser = await pw.chromium.launch()
         try:

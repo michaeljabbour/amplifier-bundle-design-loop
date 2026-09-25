@@ -444,3 +444,19 @@ async def test_mount_uses_default_ledger_dir_when_config_empty(tmp_path):
     returned = await mount(coordinator, {})
     assert isinstance(returned, DesignLedgerTool)
     assert coordinator.mount_points["tools"]["design_ledger"] is returned
+
+
+async def test_mount_does_no_filesystem_io_until_first_append(tmp_path):
+    """Session start must not create the ledger dir; the first append does."""
+    ledger_dir = tmp_path / "not-yet" / "ledger"
+    coordinator = create_test_coordinator()
+    tool = await mount(coordinator, {"ledger_dir": str(ledger_dir)})
+    assert not ledger_dir.exists()
+
+    query = await tool.execute({"op": "query", "task_class": "hero"})
+    assert query.success and query.output == []
+    assert not ledger_dir.exists()
+
+    appended = await tool.execute({"op": "append", "record": accepted_record("r1", "hero")})
+    assert appended.success, appended.error
+    assert (ledger_dir / "hero.jsonl").exists()

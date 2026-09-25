@@ -9,6 +9,7 @@ import yaml
 REPO = pathlib.Path(__file__).parents[1]
 BUNDLE = REPO / "bundle.md"
 BEHAVIOR = REPO / "behaviors" / "design-loop.yaml"
+FULL_BEHAVIOR = REPO / "behaviors" / "design-loop-full.yaml"
 FOUNDATION_SOURCE = "git+https://github.com/microsoft/amplifier-foundation@main"
 DESIGN_INTELLIGENCE_SOURCE = (
     "git+https://github.com/microsoft/amplifier-bundle-design-intelligence"
@@ -76,10 +77,19 @@ def test_behavior_is_pure_yaml_and_owns_operational_configuration():
     )
     assert document["bundle"]["name"] == "design-loop-behavior"
     assert document["bundle"]["version"] == "0.2.0"
+    # design-intelligence is opt-in (behaviors/design-loop-full.yaml): nothing
+    # here depends on it and its agent catalog costs tokens on every request.
+    assert document["includes"] == [{"bundle": RECIPES_SOURCE}]
+
+
+def test_full_behavior_opts_into_design_intelligence():
+    document = _yaml(FULL_BEHAVIOR)
+    assert document["bundle"]["name"] == "design-loop-full-behavior"
     assert document["includes"] == [
+        {"bundle": "design-loop:behaviors/design-loop"},
         {"bundle": DESIGN_INTELLIGENCE_SOURCE},
-        {"bundle": RECIPES_SOURCE},
     ]
+    assert not {"tools", "agents", "context"} & set(document)
 
 
 def test_behavior_declares_all_local_tools_with_behavior_relative_sources():
@@ -191,3 +201,45 @@ def test_nested_behavior_root_body_would_replace_a_bodyless_instruction(
     )
     loaded = asyncio.run(load_bundle(str(behavior), registry=registry))
     assert loaded.instruction == "Nested root instruction."
+
+
+def test_full_behavior_composes_design_loop_plus_design_intelligence(
+    tmp_path: pathlib.Path,
+):
+    """The opt-in behavior restores the pre-slimming composition."""
+    from amplifier_foundation import BundleRegistry, load_bundle
+
+    di = tmp_path / "design-intelligence.md"
+    di.write_text(
+        "---\nbundle:\n  name: fixture-design-intelligence\n  version: 1.0.0\n"
+        "agents:\n  include:\n    - fixture-design-intelligence:art-director\n---\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "agents").mkdir()
+    (tmp_path / "agents" / "art-director.md").write_text(
+        "---\nmeta:\n  name: art-director\n  description: fixture\n---\nbody\n",
+        encoding="utf-8",
+    )
+    recipes = tmp_path / "recipes.md"
+    _write_bundle_fixture(recipes, "fixture-recipes")
+    fixtures = {
+        DESIGN_INTELLIGENCE_SOURCE: di,
+        RECIPES_SOURCE: recipes,
+        "design-loop:behaviors/design-loop": BEHAVIOR,
+    }
+
+    def resolve_fixture(source: str) -> str:
+        try:
+            return str(fixtures[source])
+        except KeyError as error:
+            raise AssertionError(f"unexpected include source: {source}") from error
+
+    registry = BundleRegistry(
+        home=tmp_path / "amplifier-home",
+        strict=True,
+        include_source_resolver=resolve_fixture,
+    )
+    full = asyncio.run(load_bundle(str(FULL_BEHAVIOR), registry=registry))
+    assert set(AGENT_NAMES) <= set(full.agents)
+    assert "fixture-design-intelligence:art-director" in full.agents
+    assert set(TOOL_NAMES) <= {tool["module"] for tool in full.tools}

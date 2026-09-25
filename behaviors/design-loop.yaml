@@ -4,8 +4,15 @@ bundle:
   namespace_root: ..
   description: Design-loop tools, agents, and awareness composition.
 
+# Per-request footprint matters: every mounted tool schema, agent description,
+# and context file below is sent to the model on EVERY turn of every session
+# that composes this behavior. Keep descriptions terse (scripts/measure_footprint.py,
+# tests/test_footprint.py). design-intelligence is NOT included here: nothing in
+# this bundle depends on it, foundation already ships it, and its 7 agents cost
+# ~1k+ tokens per request. Opt in with behaviors/design-loop-full.yaml.
 includes:
-  - bundle: git+https://github.com/microsoft/amplifier-bundle-design-intelligence@main#subdirectory=behaviors/design-intelligence.yaml
+  # Required: the governed loop runs as a recipe (deduplicated when the base
+  # bundle, e.g. foundation, already includes it).
   - bundle: git+https://github.com/microsoft/amplifier-bundle-recipes@main#subdirectory=behaviors/recipes.yaml
 
 tools:

@@ -48,11 +48,9 @@ class TargetStateTool:
     @property
     def description(self) -> str:
         return (
-            "Produce the target-state design artefact. "
-            "Provide `improved_html` (A) directly, or rely on a configured generator. "
-            "Writes A to disk, renders it to a screenshot (B) via an injected renderer, "
-            "and returns {target_html_path, target_screenshot_path}. "
-            "On any failure returns 'target-state unavailable' — never invents content."
+            "Write improved_html (A) to out_dir/target.html and screenshot it (B) -> "
+            "{target_html_path, target_screenshot_path}. Returns 'target-state "
+            "unavailable' on failure; never invents content."
         )
 
     @property
@@ -62,27 +60,15 @@ class TargetStateTool:
             "properties": {
                 "original": {
                     "type": "object",
-                    "description": "The original design reference with 'source' and 'kind' fields.",
+                    "description": "Original {source, kind}.",
                     "properties": {
                         "source": {"type": "string"},
                         "kind": {"type": "string"},
                     },
                 },
-                "fixes": {
-                    "type": "array",
-                    "description": "List of fixes/changes to apply.",
-                    "items": {"type": "object"},
-                },
-                "improved_html": {
-                    "type": "string",
-                    "description": "Pre-generated improved HTML to write as A. "
-                    "If omitted, the configured generator is used.",
-                },
-                "out_dir": {
-                    "type": "string",
-                    "description": "Directory where target.html (A) will be written. "
-                    "Created if it does not exist. If omitted, a temp dir is used.",
-                },
+                "fixes": {"type": "array", "items": {"type": "object"}},
+                "improved_html": {"type": "string"},
+                "out_dir": {"type": "string", "description": "Temp dir if omitted."},
             },
         }
 

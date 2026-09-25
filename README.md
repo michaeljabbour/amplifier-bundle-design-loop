@@ -50,8 +50,17 @@ You can point it at a file path, a URL, or paste raw HTML.
 
 ## Architecture
 
-A thin bundle: it includes `amplifier-foundation` and
-`amplifier-bundle-design-intelligence` unchanged, and adds only the measurement layer.
+A thin bundle: it includes `amplifier-foundation` (which already ships
+`amplifier-bundle-design-intelligence` and recipes) unchanged, and adds only the
+measurement layer.
+
+**Per-request footprint.** Composing `behaviors/design-loop.yaml` onto another bundle
+adds ~1.35k tokens (chars/4 estimate) to every request: 6 terse tool schemas, 4 short
+agent descriptions (`design-critic`/`-maker`/`-planner` are recipe-internal), and a
+small awareness file. Check with `python scripts/measure_footprint.py`; budgets are
+pinned in `tests/test_footprint.py`. The behavior no longer pulls in
+design-intelligence (unused here; foundation already includes it). To get the old
+composition on a base without it, compose `behaviors/design-loop-full.yaml` instead.
 
 | Component | Type | Responsibility |
 |-----------|------|----------------|

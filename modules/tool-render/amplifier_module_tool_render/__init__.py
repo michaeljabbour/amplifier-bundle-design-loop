@@ -55,10 +55,8 @@ class RenderTool:
     @property
     def description(self) -> str:
         return (
-            "Render an HTML file or URL to a PNG screenshot. "
-            "Input: {source, kind? (html|url|image), out_path?} → {screenshot_path}. "
-            "For kind='image', returns the source path unchanged. "
-            "Never crashes: returns success=False with an error message instead."
+            "Screenshot an HTML file or URL to PNG -> {screenshot_path}. "
+            "Image sources are returned unchanged."
         )
 
     @property
@@ -66,21 +64,13 @@ class RenderTool:
         return {
             "type": "object",
             "properties": {
-                "source": {
-                    "type": "string",
-                    "description": (
-                        "Path to an HTML file, an http/https URL, or an image file path."
-                    ),
-                },
+                "source": {"type": "string", "description": "HTML path, http(s) URL, or image path."},
                 "kind": {
                     "type": "string",
                     "enum": ["html", "url", "image"],
-                    "description": "Kind of source. Auto-detected from source if omitted.",
+                    "description": "Auto-detected if omitted.",
                 },
-                "out_path": {
-                    "type": "string",
-                    "description": "Destination path for the output PNG. Uses a temp file if omitted.",
-                },
+                "out_path": {"type": "string", "description": "PNG path; temp file if omitted."},
             },
             "required": ["source"],
         }

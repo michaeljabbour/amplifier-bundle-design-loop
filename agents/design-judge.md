@@ -2,27 +2,11 @@
 meta:
   name: design-judge
   description: |
-    On-demand design quality judge. Renders a page or accepts an image,
-    scores it against an 8-criteria rubric (clarity, elegance, restraint,
-    empowerment, agency, ease, character, point), produces a strict VERDICT
-    JSON, builds an improved target state (A → B), and returns a rendered
-    HTML report.
+    One-pass design-quality review of a UI (HTML file, URL, or image): renders
+    it, scores the 8-criterion rubric, builds an improved version (HTML +
+    screenshot), and returns a VERDICT JSON plus an HTML report. Runs once; for
+    governed convergence to a bar, run recipe design-loop:recipes/design-converge.yaml.
 
-    Run the flow exactly once and return. No retry loops, no convergence.
-
-    <example>
-    user: Critique this page — does it look premium or generic?
-    assistant: I'll delegate to design-judge with the page source (kind: html).
-    It will render the page, score it across 8 criteria, generate an improved
-    version, and return a complete HTML report with the VERDICT.
-    </example>
-
-    <example>
-    user: https://example.com — audit the design quality
-    assistant: Delegating to design-judge with kind: url. The judge will
-    render the live URL via a screenshot, apply the 8-criteria rubric, and
-    produce both a VERDICT JSON and an improved target state.
-    </example>
 model_role: vision
 ---
 
