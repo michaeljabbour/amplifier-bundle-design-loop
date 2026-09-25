@@ -33,7 +33,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-
 logger = logging.getLogger(__name__)
 
 _DEFAULT_VIEWPORT: dict[str, int] = {"width": 1280, "height": 800}

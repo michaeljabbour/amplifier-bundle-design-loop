@@ -43,8 +43,13 @@ critic, maker, and planner are model calls.
 
 ## Division of labour
 
-`design-intelligence` agents do the design work; this bundle adds the **measurement and
-governance** layer (render → lints → score → decide → ledger → report).
+This bundle's own agents (`design-critic`, `design-maker`, `design-planner`, driven by
+`design-judge` or the recipes) do the design work; the deterministic tools add the
+**measurement and governance** layer (render → lints → score → decide → ledger → report).
+
+`design-intelligence` is **not** a dependency of the judge or the harness. It is an
+optional, separate agent team: available here via `foundation`, or add it to the slim
+behavior with `behaviors/design-loop-full.yaml`.
 
 ---
 

@@ -19,7 +19,7 @@ RECIPES_SOURCE = (
     "git+https://github.com/microsoft/amplifier-bundle-recipes"
     "@main#subdirectory=behaviors/recipes.yaml"
 )
-ROOT_BODY_SHA256 = "2d0ccd15318f732d873cc816ca1fa398aa32979ec92c9da6b50db7e684408bf0"
+ROOT_BODY_SHA256 = "27e734cb931429777dd3e8422319e62fa9c0abc47342dbd3172c68985fb8598e"
 TOOL_NAMES = (
     "tool-render",
     "tool-target-state",
@@ -67,6 +67,19 @@ def test_root_includes_only_foundation_and_its_behavior():
 def test_root_markdown_body_is_byte_exact_standalone_instruction():
     body = BUNDLE.read_bytes().split(b"---", 2)[2]
     assert sha256(body).hexdigest() == ROOT_BODY_SHA256
+
+
+def test_root_division_of_labour_matches_composition():
+    """bundle.md must not claim design-intelligence does the work: the slim
+    behavior no longer includes it; the bundle's own agents do the design work."""
+    body = BUNDLE.read_text(encoding="utf-8").split("---", 2)[2]
+    section = body.split("## Division of labour", 1)[1].split("\n---", 1)[0]
+    assert "`design-intelligence` agents do the design work" not in section
+    for agent in ("design-critic", "design-maker", "design-planner"):
+        assert agent in section
+    assert "not** a dependency" in section
+    assert "behaviors/design-loop-full.yaml" in section
+    assert FULL_BEHAVIOR.exists()
 
 
 def test_behavior_is_pure_yaml_and_owns_operational_configuration():
