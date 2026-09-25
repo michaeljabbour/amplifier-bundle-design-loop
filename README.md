@@ -30,12 +30,16 @@ The judge runs **once and returns**. It does not loop.
 
 ## Quick start
 
-Add the bundle, then just talk to the judge:
+Add the behavior, then just talk to the judge:
 
 ```bash
-amplifier bundle add git+https://github.com/michaeljabbour/amplifier-bundle-design-loop@main --app
+amplifier bundle add 'git+https://github.com/michaeljabbour/amplifier-bundle-design-loop@main#subdirectory=behaviors/design-loop.yaml' --app --name design-loop
 amplifier
 ```
+
+Add `behaviors/design-loop.yaml`, not the repo root. `bundle.md` is the standalone root
+(`amplifier run --bundle ...`): its markdown body is a system prompt, so composing it onto
+another host makes the loader drop it with a "carries a markdown body" warning.
 
 ```text
 > Use the design-judge to judge fixtures/slop.html — score it, build a better
