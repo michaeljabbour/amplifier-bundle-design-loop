@@ -92,11 +92,14 @@ Requirements:
 - `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` set in the environment
 - Chromium installed (`python -m playwright install chromium`)
 - `bundle.md` at the repo root and `agents/design-judge.md` present
-- Network access to resolve `amplifier-bundle-design-intelligence` during `prepare()`
+- Network access to resolve `amplifier-foundation` (and, through it,
+  `amplifier-bundle-design-intelligence`) during `prepare()`
 
 ### Known constraint: `prepare()` and offline dev environments
 
-`bundle.md` includes `amplifier-bundle-design-intelligence@main`. During `prepare()`,
+`bundle.md` includes `foundation`, which in turn includes
+`amplifier-bundle-design-intelligence@main` (`behaviors/design-loop.yaml` itself no
+longer includes it directly; `behaviors/design-loop-full.yaml` does). During `prepare()`,
 `amplifier_foundation` activates each included bundle's Python package dependencies.
 The design-intelligence bundle pulls in the `amplifier` meta-package (from the local
 Amplifier cache), which depends on:

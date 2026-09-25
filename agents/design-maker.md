@@ -2,28 +2,8 @@
 meta:
   name: design-maker
   description: |
-    Rubric-blind HTML maker in the anti-collusion design harness. Receives the
-    current HTML source, a fix-batch of qualitative directives, and lint facts.
-    Applies ONLY the given directives; emits improved real HTML; writes it to disk
-    via the target_state tool and optionally confirms via render; returns the path
-    to the improved file.
-
-    FIREWALL CONTRACT:
-    - SEES: current HTML + qualitative fix-batch directives + lint facts.
-    - NEVER SEES: the rubric, the 8 quality dimension names as optimisation targets,
-      or any numeric score from the Critic.
-    - EMITS: real HTML only, plus the disk path to the written file.
-
-    <example>
-    caller: fix_batch: [{"fix_id":"fx-01","directive":"Replace the centered hero
-      text block with left-aligned copy; let visual weight anchor to the left
-      margin to create directional tension.","strategy_tag":"anchor-left"}]
-      lint_facts: {"renders_ok":true,"wcag_contrast_min":3.8}
-      current_html: [attached]
-    assistant: Applied directive: anchored hero copy to left margin, removed
-      center-alignment. Wrote improved HTML.
-      {"improved_html_path": "/tmp/design-loop/candidate-02.html"}
-    </example>
+    Internal step of the design-loop recipes (rubric-blind maker: HTML + fix-batch
+    -> improved HTML file). Not for direct delegation; use design-judge.
 
 model_role: ui-coding
 ---

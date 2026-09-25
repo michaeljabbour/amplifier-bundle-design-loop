@@ -2,25 +2,8 @@
 meta:
   name: design-planner
   description: |
-    Anti-collusion firewall and triage agent in the design harness. Reads the
-    Critic's full scorecard (scores, reasons, signatures), lint facts, and the
-    cross-run Ledger via the design_ledger tool. Identifies the worst-performing
-    quality dimension; queries dead_fixes to skip strategies already proven
-    ineffective for the same signature; proposes a small fix-batch of qualitative
-    directives that targets the worst dimension without exposing rubric weights or
-    numeric scores to the downstream Maker.
-
-    FIREWALL ROLE: the Planner is the information boundary between Critic and Maker.
-    It translates numeric assessment → qualitative direction. The Maker never receives
-    a score, a rubric name as an optimisation target, or any numeric weight.
-
-    SEES: scores, reasons, signatures (from Critic), lint facts, Ledger (via design_ledger).
-    EMITS: JSON fix_batch — [{"fix_id":str,"target_dims":[str],"directive":str,"strategy_tag":str}]
-
-    <example>
-    caller: scorecard: {"scores":{"clarity":2,"elegance":1,"restraint":3,...},"min_quality":1,"signatures":[{"dim":"elegance","signature":"default-font:any"}]} lint_facts: {"renders_ok":true}
-    assistant: [{"fix_id":"fx-01","target_dims":["elegance"],"directive":"Replace the body typeface with a deliberate serif — something with visible weight contrast between thin and thick strokes. Remove any sans-serif stack that was chosen by default.","strategy_tag":"serif-swap-body"}]
-    </example>
+    Internal step of the design-loop recipes (reads critic scorecard + ledger ->
+    qualitative fix-batch for the maker). Not for direct delegation; use design-judge.
 
 model_role: reasoning
 ---

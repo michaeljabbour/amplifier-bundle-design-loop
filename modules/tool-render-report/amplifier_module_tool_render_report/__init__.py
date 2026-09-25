@@ -40,10 +40,8 @@ class RenderReportTool:
     @property
     def description(self) -> str:
         return (
-            "Render a self-contained HTML design-review report. "
-            "Input: {verdict|verdict_text, target_html_path?, "
-            "target_screenshot_path?, out_path?} → {report_html_path}. "
-            "Never crashes: returns success=False with an error message instead."
+            "Write a self-contained HTML design-review report from a verdict "
+            "{scores, total, fixes} (dict or text) -> {report_html_path}."
         )
 
     @property
@@ -51,29 +49,11 @@ class RenderReportTool:
         return {
             "type": "object",
             "properties": {
-                "verdict": {
-                    "type": "object",
-                    "description": "Raw verdict dict {scores, total, fixes}.",
-                },
-                "verdict_text": {
-                    "type": "string",
-                    "description": "Raw verdict string (alternative to verdict dict).",
-                },
-                "target_html_path": {
-                    "type": "string",
-                    "description": "Path to the improved HTML candidate (A).",
-                },
-                "target_screenshot_path": {
-                    "type": "string",
-                    "description": "Path to the target screenshot PNG (B).",
-                },
-                "out_path": {
-                    "type": "string",
-                    "description": (
-                        "Destination path for the report HTML. "
-                        "Uses a temp file if omitted."
-                    ),
-                },
+                "verdict": {"type": "object"},
+                "verdict_text": {"type": "string"},
+                "target_html_path": {"type": "string", "description": "Improved HTML (A)."},
+                "target_screenshot_path": {"type": "string", "description": "Screenshot of A (B)."},
+                "out_path": {"type": "string", "description": "Temp file if omitted."},
             },
         }
 

@@ -50,15 +50,12 @@ class DesignLintsTool:
 
     @property
     def description(self) -> str:
+        # Terse on purpose: sent on every request. Output keys: class docstring.
         return (
-            "Run deterministic design lints (WCAG contrast, self-containment, DOM metrics) "
-            "on an HTML page via headless Chromium. "
-            "Input: one of {html, html_path, url} + optional viewport (default 1280x800). "
-            "Output: {renders_ok, network_request, wcag_contrast_min, contrast_pass, "
-            "focus_reachable, dom_nodes, text_to_chrome_ratio, viewport_overflow, "
-            "hard_fail, hard_fail_reasons}. "
-            "Never raises: all failures surface as fields. "
-            "Images have no DOM — use the render tool for screenshots instead."
+            "Deterministic design lints via headless Chromium: WCAG contrast, "
+            "self-containment (no network), focus, DOM metrics, overflow. Give one of "
+            "html|html_path|url. Returns lint facts incl. hard_fail, hard_fail_reasons. "
+            "HTML only (use render for images)."
         )
 
     @property
@@ -66,24 +63,15 @@ class DesignLintsTool:
         return {
             "type": "object",
             "properties": {
-                "html": {
-                    "type": "string",
-                    "description": "Raw HTML content to lint. Provide exactly ONE of html, html_path, or url.",
-                },
-                "html_path": {
-                    "type": "string",
-                    "description": "Path to an HTML file to lint.",
-                },
-                "url": {
-                    "type": "string",
-                    "description": "HTTP/HTTPS URL to navigate to and lint.",
-                },
+                "html": {"type": "string"},
+                "html_path": {"type": "string"},
+                "url": {"type": "string"},
                 "viewport": {
                     "type": "object",
-                    "description": "Viewport dimensions. Defaults to 1280x800.",
+                    "description": "Default 1280x800.",
                     "properties": {
-                        "width":  {"type": "integer", "description": "Viewport width in px."},
-                        "height": {"type": "integer", "description": "Viewport height in px."},
+                        "width": {"type": "integer"},
+                        "height": {"type": "integer"},
                     },
                     "required": ["width", "height"],
                 },

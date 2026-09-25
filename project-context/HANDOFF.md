@@ -1,15 +1,15 @@
-# Handoff — 2026-09-11
+# Handoff — 2026-09-24
 
-Prepared the pending app changes for a PR: saved results, searchable history,
-structured milestones, and honest completion labels. Review fixes cover run-path
-validation, active-run deletion, fresh IDs on re-run, concurrent history writes,
-malformed snapshots, immutable baseline scores, final milestone delivery, and
-live-result bar propagation. Mobile navigation now wraps within the viewport.
+Branch `perf/session-footprint`: reduced what `behaviors/design-loop.yaml` adds to
+every request (~2.9k -> ~1.35k tok for its own components, chars/4) plus dropping
+the unused design-intelligence include (opt-in via `behaviors/design-loop-full.yaml`).
+Tool input contracts are unchanged except `design_controller.candidate_scores`,
+which now uses `additionalProperties` (0-4 ints) instead of 8 enumerated properties.
+playwright imports lazily; the ledger dir is created on first append.
 
-Validation: deterministic suite and isolated DRY browser flow. See the PR for
-final counts/status. No paid-provider execution was performed for this change.
+Validation: deterministic suite only (`pytest modules tests`). No live `amplifier run`
+was done (file:// module sources would install into the shared tool env).
 
-Next: review/merge the PR, refresh editable modules (render-report now requires
-filelock), and perform an explicitly budgeted live critique if needed. The
-original main checkout's pending files were preserved; do not blindly apply this
-PR on top of that working diff. Local research exports were not published.
+Next: end-to-end check in a disposable Amplifier home — compose the behavior, confirm
+the delegate catalog and tool list, run design-judge once and a 1-budget
+design-converge with `bundle_ref` set. Not pushed.

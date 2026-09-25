@@ -33,8 +33,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from playwright.async_api import async_playwright
-
 logger = logging.getLogger(__name__)
 
 _DEFAULT_VIEWPORT: dict[str, int] = {"width": 1280, "height": 800}
@@ -242,6 +240,9 @@ async def run_lints(
     # ---------- Playwright session ----------------------------------------------
     external_requested: list[bool] = [False]
     page_errors: list[str] = []
+
+    # Lazy import: keeps playwright's import cost off session start (mount).
+    from playwright.async_api import async_playwright
 
     try:
         async with async_playwright() as pw:
