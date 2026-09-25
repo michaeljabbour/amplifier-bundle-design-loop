@@ -4,7 +4,14 @@ Every tool schema, agent description, and context file the behavior mounts is
 sent to the model on every request of every session composing it, so these
 tests pin (a) size budgets and (b) the tool input contracts, so trimming text
 can never silently drop a parameter the recipes rely on.
+
+behaviors/design-loop.yaml composes NO tools (0.3.0+): design-judge's 3 are
+agent-scoped (agents/design-judge.md) and the remaining 3 (plus a duplicate of
+design-judge's 3, for the recipe's bash steps) live on the never-composed
+behaviors/design-loop-recipe-tools.yaml, fetched by the governed recipe via
+`--bundle`. Tool-schema budgets/contracts below are checked against that file.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -22,10 +29,22 @@ measure = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(measure)
 
 BEHAVIOR = yaml.safe_load((REPO / "behaviors" / "design-loop.yaml").read_text())
+RECIPE_TOOLS_BEHAVIOR = yaml.safe_load(
+    (REPO / "behaviors" / "design-loop-recipe-tools.yaml").read_text()
+)
 
-# Budgets in characters (tokens ~= chars / 4). Before slimming the behavior's
-# own components were ~11.5k chars (~2.9k tok); after, ~5.4k chars (~1.35k tok).
-TOTAL_BUDGET_CHARS = 6500
+# Budgets in characters (tokens ~= chars / 4). Original (pre-0.2.0): ~11.5k
+# chars (~2.9k tok). After the 0.2.0 slim (dropping design-intelligence):
+# ~5.4k chars (~1.35k tok), still dominated by the 6 tool schemas. After the
+# 0.3.0 on-demand split (this file): the behavior mounts NO tools at all --
+# design-judge carries its 3 agent-scoped (agents/design-judge.md), and the
+# recipe's remaining 3 resolve via design-loop-recipe-tools.yaml -- so the
+# behavior's own per-request footprint is just 4 short agent descriptions +
+# one small awareness file (measured 1,460 chars / ~365 tok; see
+# `python scripts/measure_footprint.py`). Tool schemas now cost tokens only
+# inside the session that actually spawns design-judge, or the recipe's own
+# bash-step invocations -- never the composing session's baseline.
+TOTAL_BUDGET_CHARS = 1600
 AGENT_DESC_BUDGET_CHARS = 400
 TOOL_DESC_BUDGET_CHARS = 400
 CONTEXT_BUDGET_CHARS = 800
@@ -35,7 +54,13 @@ EXPECTED_CONTRACTS = {
     "render": ({"source", "kind", "out_path"}, ["source"]),
     "target_state": ({"original", "fixes", "improved_html", "out_dir"}, None),
     "render_report": (
-        {"verdict", "verdict_text", "target_html_path", "target_screenshot_path", "out_path"},
+        {
+            "verdict",
+            "verdict_text",
+            "target_html_path",
+            "target_screenshot_path",
+            "out_path",
+        },
         None,
     ),
     "design_lints": ({"html", "html_path", "url", "viewport"}, None),
@@ -45,9 +70,20 @@ EXPECTED_CONTRACTS = {
     ),
     "design_controller": (
         {
-            "op", "candidate_scores", "candidate_hard_fail", "best_scores",
-            "no_regress_dims", "tau", "bar", "floors", "budget_remaining",
-            "recent_improvements", "k", "epsilon", "last_decision", "target_retried",
+            "op",
+            "candidate_scores",
+            "candidate_hard_fail",
+            "best_scores",
+            "no_regress_dims",
+            "tau",
+            "bar",
+            "floors",
+            "budget_remaining",
+            "recent_improvements",
+            "k",
+            "epsilon",
+            "last_decision",
+            "target_retried",
         },
         ["op"],
     ),
@@ -60,6 +96,10 @@ EXPECTED_ENUMS = {
 
 
 def test_total_per_request_footprint_within_budget():
+    # Only the composed behavior counts toward the baseline per-request cost.
+    # RECIPE_TOOLS_BEHAVIOR is never composed onto a session directly (see its
+    # own description) -- it is fetched by the recipe's bash steps via
+    # `--bundle`, so its tool schemas are NOT part of this budget.
     total = sum(
         r["chars"]
         for r in (
@@ -88,7 +128,11 @@ def test_context_file_is_small():
 
 
 def test_tool_descriptions_are_short():
-    for row in measure.tool_rows(BEHAVIOR):
+    # Tool schemas live on the tools-only companion behavior now (never
+    # composed onto a session baseline; see test_total_per_request_footprint_
+    # within_budget), but their descriptions still need to stay terse for
+    # whichever session momentarily loads them via `--bundle`.
+    for row in measure.tool_rows(RECIPE_TOOLS_BEHAVIOR):
         assert row["desc_chars"] <= TOOL_DESC_BUDGET_CHARS, row
 
 
@@ -96,7 +140,7 @@ def test_tool_input_contracts_preserved():
     import asyncio
     import importlib
 
-    for spec in BEHAVIOR["tools"]:
+    for spec in RECIPE_TOOLS_BEHAVIOR["tools"]:
         pkg = "amplifier_module_" + spec["module"].replace("-", "_")
         coord = measure._FakeCoordinator()
         asyncio.run(importlib.import_module(pkg).mount(coord, {}))

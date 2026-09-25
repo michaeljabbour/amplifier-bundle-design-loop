@@ -59,19 +59,41 @@ A thin bundle: it includes `amplifier-foundation` (which already ships
 measurement layer.
 
 **Per-request footprint.** Composing `behaviors/design-loop.yaml` onto another bundle
-adds ~1.35k tokens (chars/4 estimate) to every request: 6 terse tool schemas, 4 short
-agent descriptions (`design-critic`/`-maker`/`-planner` are recipe-internal), and a
-small awareness file. Check with `python scripts/measure_footprint.py`; budgets are
-pinned in `tests/test_footprint.py`. The behavior no longer pulls in
-design-intelligence (unused here; foundation already includes it). To get the old
-composition on a base without it, compose `behaviors/design-loop-full.yaml` instead.
+adds ~365 tokens (chars/4 estimate) to every request: 4 short agent descriptions
+(`design-critic`/`-maker`/`-planner` are recipe-internal) and a small awareness file --
+**no tool schemas at all**. The 6 deterministic tools cost real per-request tokens (they
+carry full JSON input schemas) but are mounted on demand, not on every session:
+
+- `design-judge` carries its own 3 (`render`, `target_state`, `render_report`) in its own
+  frontmatter (`agents/design-judge.md`) -- they mount only in its spawned child session,
+  when someone actually delegates to it.
+- The governed recipe (`design-converge.yaml`) resolves all 6 tools via an explicit
+  `bundle_ref` default pointing at `behaviors/design-loop-recipe-tools.yaml` -- a
+  tools-only companion behavior that is never composed onto a session directly, so it
+  never appears in anyone's baseline. This also makes the recipe self-sufficient: it
+  works regardless of what the calling session composed.
+
+End-to-end measured effect (leave-one-out, Haiku tokenizer): composing the old
+(pre-0.3.0) behavior cost ~1,822 tokens on every request; composing this one costs
+~365 (agent descriptions + awareness) -- the tool cost (~1,450 tokens) now shows up
+only inside design-judge's own session, or the recipe's own bash-step invocations.
+Check with `python scripts/measure_footprint.py`; budgets are pinned in
+`tests/test_footprint.py`. The behavior no longer pulls in design-intelligence (unused
+here; foundation already includes it). To get the old design-intelligence composition
+on a base without it, compose `behaviors/design-loop-full.yaml` instead.
 
 | Component | Type | Responsibility |
 |-----------|------|----------------|
-| `design-judge` | Agent (`model_role: vision`) | Runs the whole flow once; carries the 8-quality rubric |
-| `tool-render` | Tool | Turns HTML / a URL / an image into a screenshot |
-| `tool-target-state` | Tool | Writes the improved HTML and renders it; returns `"unavailable"` on failure |
-| `tool-render-report` | Tool | Builds the self-contained HTML report |
+| `design-judge` | Agent (`model_role: vision`) | Runs the whole flow once; carries the 8-quality rubric and its own 3 tools |
+| `tool-render` | Tool (agent-scoped on `design-judge`) | Turns HTML / a URL / an image into a screenshot |
+| `tool-target-state` | Tool (agent-scoped on `design-judge`) | Writes the improved HTML and renders it; returns `"unavailable"` on failure |
+| `tool-render-report` | Tool (agent-scoped on `design-judge`) | Builds the self-contained HTML report |
+
+`design-critic`/`design-maker`/`design-planner` and all 6 tools also live in
+`behaviors/design-loop-recipe-tools.yaml` and the 4 agent descriptions in
+`behaviors/design-loop.yaml` -- the recipe resolves tools from the former (via
+`bundle_ref`) and agents from whatever composed `behaviors/design-loop.yaml` (a legacy
+recipe; see `docs/RECIPE_SCHEMA.md` "Schema v2" for why that's the caller-bound default).
 
 Two honest guarantees: the "after" picture is always a real render of the improved
 HTML (never an AI-generated dream), and the judge always returns a verdict rather

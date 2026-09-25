@@ -1,8 +1,8 @@
 bundle:
   name: design-loop-behavior
-  version: 0.2.0
+  version: 0.3.0
   namespace_root: ..
-  description: Design-loop tools, agents, and awareness composition.
+  description: Design-loop agents and awareness composition (on-demand -- no tools mounted here).
 
 # Per-request footprint matters: every mounted tool schema, agent description,
 # and context file below is sent to the model on EVERY turn of every session
@@ -10,24 +10,18 @@ bundle:
 # tests/test_footprint.py). design-intelligence is NOT included here: nothing in
 # this bundle depends on it, foundation already ships it, and its 7 agents cost
 # ~1k+ tokens per request. Opt in with behaviors/design-loop-full.yaml.
+#
+# No tools: block. The 6 deterministic tools carry real per-request cost (schema
+# + description on every turn) but are only ever used from inside a spawned
+# child session (design-judge's own tools:, or the governed recipe's explicit
+# bundle_ref -> behaviors/design-loop-recipe-tools.yaml). Composing this behavior
+# therefore costs only the 4 short agent descriptions + this awareness file --
+# the tools appear only when design-judge is actually delegated to, or the
+# recipe actually runs. See README.md "Per-request footprint".
 includes:
   # Required: the governed loop runs as a recipe (deduplicated when the base
   # bundle, e.g. foundation, already includes it).
   - bundle: git+https://github.com/microsoft/amplifier-bundle-recipes@main#subdirectory=behaviors/recipes.yaml
-
-tools:
-  - module: tool-render
-    source: ../modules/tool-render
-  - module: tool-target-state
-    source: ../modules/tool-target-state
-  - module: tool-render-report
-    source: ../modules/tool-render-report
-  - module: tool-design-lints
-    source: ../modules/tool-design-lints
-  - module: tool-design-ledger
-    source: ../modules/tool-design-ledger
-  - module: tool-design-controller
-    source: ../modules/tool-design-controller
 
 agents:
   include:
