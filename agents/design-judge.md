@@ -13,13 +13,18 @@ model_role: vision
 # not in the parent session that delegates to it. This keeps the composing
 # behavior (behaviors/design-loop.yaml) free of tool-schema footprint --see
 # README.md "Per-request footprint".
+#
+# Sources are absolute on purpose. When this agent is composed into a session (via
+# behaviors/design-loop.yaml), Amplifier resolves relative module paths against the
+# LAST composed bundle's folder, not this bundle's, so ../modules/... broke whenever
+# another app bundle was added after design-loop.
 tools:
   - module: tool-render
-    source: ../modules/tool-render
+    source: git+https://github.com/michaeljabbour/amplifier-bundle-design-loop@main#subdirectory=modules/tool-render
   - module: tool-target-state
-    source: ../modules/tool-target-state
+    source: git+https://github.com/michaeljabbour/amplifier-bundle-design-loop@main#subdirectory=modules/tool-target-state
   - module: tool-render-report
-    source: ../modules/tool-render-report
+    source: git+https://github.com/michaeljabbour/amplifier-bundle-design-loop@main#subdirectory=modules/tool-render-report
 ---
 
 # design-judge

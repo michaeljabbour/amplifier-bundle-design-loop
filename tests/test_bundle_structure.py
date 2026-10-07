@@ -121,6 +121,16 @@ def test_design_judge_declares_its_own_agent_scoped_tools():
     assert judge_tools == {"tool-render", "tool-target-state", "tool-render-report"}
 
 
+def test_design_judge_tool_sources_are_absolute():
+    """Agent-scoped tools must not use paths relative to this bundle: when the agent is
+    composed into a session, Amplifier resolves them against the last composed bundle's
+    folder, which breaks as soon as another app bundle is added after design-loop."""
+    fm = yaml.safe_load(_frontmatter(REPO / "agents" / "design-judge.md"))
+    for tool in fm["tools"]:
+        assert tool["source"].startswith("git+https://github.com/michaeljabbour/amplifier-bundle-design-loop@main#subdirectory=modules/"), tool
+        assert tool["source"].endswith(tool["module"]), tool
+
+
 def test_full_behavior_opts_into_design_intelligence():
     document = _yaml(FULL_BEHAVIOR)
     assert document["bundle"]["name"] == "design-loop-full-behavior"
