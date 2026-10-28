@@ -17,3 +17,5 @@
   registered because legacy recipes resolve agents from the caller's agent map.
   playwright is imported on first use, and the ledger dir is created on first
   append, so mount() does no heavy work.
+
+- 2026-10-28: Taste remains the semantic method/schema owner. Design Loop validates and stores optional round records without a Taste runtime dependency. Score rank/technical validity and reported human adoption are separate. Passing a score bar now means Ready for review; legacy `ship` is false and `review_ready` is explicit. No populated authority string authenticates a person or grants runtime permission.

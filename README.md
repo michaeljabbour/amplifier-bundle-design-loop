@@ -150,3 +150,7 @@ the two clocks.
 
 The C-signal: escalation-rate per run falls while quality holds, and judge-tokens per
 run fall. Full spec in [`docs/HARNESS_DESIGN.md`](docs/HARNESS_DESIGN.md).
+
+## Bounded improvement rounds
+
+The optional [Taste improvement-round adapter](docs/IMPROVEMENT-ROUNDS.md) preserves the brief, baseline, evidence and reported keep/undo independently of score ranking. A passing score bar is ready for review; it does not authorize shipping.

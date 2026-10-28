@@ -83,6 +83,22 @@ def _ledger_len(W):
     return len(_load(W + "/ledger.json", []) or [])
 
 
+def _attach_improvement_round(record, W):
+    """Carry an optional comparison to the ledger; malformed JSON fails loudly.
+
+    The ledger's versioned adapter validates the semantics before append. No
+    comparison is invented for a legacy run that has no supplied round record.
+    """
+    path = os.path.join(W, "improvement_round.json")
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as source:
+                record["improvement_round"] = json.load(source)
+        except (OSError, ValueError) as error:
+            _exit_error("invalid_improvement_round", str(error))
+    return record
+
+
 def extract(raw_file):
     """Pull the clean tool-result JSON out of `amplifier tool invoke --output json`.
 
@@ -133,7 +149,7 @@ def baserec(W, run, tc, sig, rv):
         "fix_batch": [], "lint_results": lints,
         "artifact_ref": W + "/best.html", "decision": "NEW_BEST",
     }
-    print(json.dumps(rec))
+    print(json.dumps(_attach_improvement_round(rec, W)))
 
 
 def lintrec(W, run, tc, sig, rv):
@@ -147,7 +163,7 @@ def lintrec(W, run, tc, sig, rv):
         "reject_reason": "lint:" + ",".join(reasons),
         "fix_batch": fb, "lint_results": lints,
     }
-    print(json.dumps(rec))
+    print(json.dumps(_attach_improvement_round(rec, W)))
 
 
 def passrec(W, run, tc, sig, rv, outcome, reason, dec):
@@ -162,7 +178,7 @@ def passrec(W, run, tc, sig, rv, outcome, reason, dec):
     }
     if outcome != "accepted":
         rec["reject_reason"] = reason or outcome
-    print(json.dumps(rec))
+    print(json.dumps(_attach_improvement_round(rec, W)))
 
 
 def result(W, dec, bref):
@@ -335,6 +351,8 @@ def summary(W, action):
         "report_path": rep.get("report_html_path", W + "/report.html"),
         "best_scores": best_scores, "passes": passes,
         "final_action": action, "escalation": escalation,
+        "improvement_round_status": best.get("improvement_round_status") if isinstance(best, dict) else None,
+        "adoption": "Not established by score or convergence; consult the recorded human/delegated decision.",
     }))
 
 

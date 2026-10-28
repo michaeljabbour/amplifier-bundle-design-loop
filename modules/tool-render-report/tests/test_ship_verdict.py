@@ -31,10 +31,10 @@ class TestShipVerdictUnit:
             == "Not ready \u2014 1 blocker"
         )
 
-    def test_converged_and_bar_met_ships(self):
-        """Converged + total >= bar + no blockers -> Ready to ship."""
-        assert ship_verdict(29, converged=True, blockers=0) == "Ready to ship"
-        assert ship_verdict(SHIP_BAR, converged=True, blockers=0) == "Ready to ship"
+    def test_converged_and_bar_met_is_ready_for_review(self):
+        """Converged + total >= bar + no blockers -> Ready for review."""
+        assert ship_verdict(29, converged=True, blockers=0) == "Ready for review"
+        assert ship_verdict(SHIP_BAR, converged=True, blockers=0) == "Ready for review"
 
     def test_below_bar_is_not_ready(self):
         """Below the bar (even if converged) is honestly 'Not ready yet'."""
@@ -42,14 +42,14 @@ class TestShipVerdictUnit:
         assert ship_verdict(18, converged=True, blockers=0) == "Not ready yet"
 
     def test_converged_but_below_custom_bar(self):
-        """A custom, stricter bar can withhold 'Ready to ship' even when converged."""
+        """A custom, stricter bar can withhold 'Ready for review' even when converged."""
         assert ship_verdict(20, converged=True, blockers=0, bar=25) == "Not ready yet"
-        assert ship_verdict(25, converged=True, blockers=0, bar=25) == "Ready to ship"
+        assert ship_verdict(25, converged=True, blockers=0, bar=25) == "Ready for review"
 
     def test_default_bar_is_ship_bar_constant(self):
         """Calling with no explicit bar uses the shared SHIP_BAR constant."""
         assert ship_verdict(SHIP_BAR - 1, converged=True, blockers=0) == "Not ready yet"
-        assert ship_verdict(SHIP_BAR, converged=True, blockers=0) == "Ready to ship"
+        assert ship_verdict(SHIP_BAR, converged=True, blockers=0) == "Ready for review"
 
 
 def _make_state(tmp_path: Path, *, total: int, converged: bool, blockers: int = 0) -> dict:
@@ -108,7 +108,7 @@ class TestShipVerdictReportWiring:
         report = Path(result["report_html"]).read_text(encoding="utf-8")
 
         expected = ship_verdict(total, converged=converged, blockers=blockers)
-        assert expected == "Ready to ship"
+        assert expected == "Ready for review"
         assert expected in report
 
     def test_quality_tier_band_untouched_structurally(self) -> None:
@@ -119,7 +119,7 @@ class TestShipVerdictReportWiring:
 
         band = _pw_band_for(29)
         assert band["name"] == "Exemplary"
-        assert band["line"] == "Ship it and learn in the open."
+        assert band["line"] == "Review the candidate against the brief."
         assert "c" in band and "s" in band
         assert "ready" not in band, (
             "_pw_band_for() must no longer carry a 'ready' ship phrase -- "
@@ -162,4 +162,4 @@ class TestShipVerdictReportWiring:
         out_dir.mkdir()
         result = render(state, out_dir=str(out_dir))
         report = Path(result["report_html"]).read_text(encoding="utf-8")
-        assert "Ready to ship" in report
+        assert "Ready for review" in report

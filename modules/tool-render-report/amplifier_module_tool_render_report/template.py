@@ -505,13 +505,13 @@ _PW_DO_NEXT = {
 }
 
 
-# The bar a candidate must clear to "ship" (single source of truth for both
+# The bar a candidate must clear for review (single source of truth for both
 # this report renderer and the app -- see ship_verdict()).
 SHIP_BAR = 26
 
 
 def ship_verdict(total: int, *, converged: bool, blockers: int = 0, bar: int = SHIP_BAR) -> str:
-    """Canonical ship/no-ship call -- the ONLY place this decision is made.
+    """Canonical review-readiness label; the historical API name is retained.
 
     Both the app (app/results.py) and this report renderer import this
     function so the same run can never show two different ship verdicts.
@@ -519,15 +519,52 @@ def ship_verdict(total: int, *, converged: bool, blockers: int = 0, bar: int = S
     Precedence:
         1. Any ground-truth blocker vetoes shipping outright, regardless of
            score or convergence.
-        2. Otherwise, ship only once the run has converged AND cleared the
-           bar.
+        2. Otherwise, ready for review once converged AND above the bar.
+           Scores never establish user adoption or shipping authorization.
         3. Anything else is honestly "not ready yet".
     """
     if blockers > 0:
         return f"Not ready \u2014 {blockers} blocker{'s' if blockers != 1 else ''}"
     if converged and total >= bar and blockers == 0:
-        return "Ready to ship"
+        return "Ready for review"
     return "Not ready yet"
+
+
+def _improvement_round_section(records: list) -> str:
+    """Show supplied comparison receipts without certifying their authority."""
+    rounds = [r.get("improvement_round") for r in records if isinstance(r.get("improvement_round"), dict)]
+    if not rounds:
+        return '<section><h2>Adoption remains a separate decision</h2><p>No improvement-round receipt was supplied. Scores and convergence do not establish a human keep decision or shipping permission.</p></section>'
+    parts = ['<section><h2>Improvement rounds and recorded decisions</h2><p>These supplied records preserve the brief, comparison and decision source. They do not authenticate a person or grant runtime permission.</p>']
+    for value in rounds:
+        def object_field(key: str) -> dict:
+            item = value.get(key)
+            return item if isinstance(item, dict) else {}
+        brief = object_field("brief")
+        change = object_field("change")
+        decision = object_field("decision")
+        comparison = object_field("comparison")
+        budget = object_field("budget")
+        taste = comparison.get("taste") if isinstance(comparison.get("taste"), dict) else {}
+        elegance = comparison.get("elegance") if isinstance(comparison.get("elegance"), dict) else {}
+        parts.append('<details><summary>Round '+_esc(value.get("round_id", "unknown"))+' — Recorded decision: '+_esc(decision.get("action", "not supplied"))+'</summary><dl>')
+        fields = [("Brief", brief.get("intent")), ("Brief source", brief.get("source_ref")),
+                  ("Change hypothesis", change.get("hypothesis")), ("Regression risk", change.get("regression_risk")),
+                  ("Taste reason", taste.get("reason")),
+                  ("Elegance reason", elegance.get("reason")),
+                  ("Decision source", decision.get("source_ref")), ("Decision reason", decision.get("reason")),
+                  ("Rollback", decision.get("rollback_ref")), ("Stop reason", budget.get("stop_reason"))]
+        for name, content in fields:
+            parts.append('<dt>'+_esc(name)+'</dt><dd>'+_esc(content or "not supplied")+'</dd>')
+        parts.append('</dl><ul>')
+        gates = value.get("gates")
+        for gate in gates if isinstance(gates, list) else []:
+            if not isinstance(gate, dict):
+                continue
+            parts.append('<li>'+_esc(gate.get("id"))+': '+_esc(gate.get("status"))+' — '+_esc(gate.get("reason"))+'</li>')
+        parts.append('</ul></details>')
+    parts.append('</section>')
+    return ''.join(parts)
 
 
 def _pw_band_for(total: int) -> dict:
@@ -548,7 +585,7 @@ def _pw_band_for(total: int) -> dict:
                  "line": "Real value \u2014 refine the weak spots.",
                  "c": "oklch(0.52 0.07 155)", "s": "oklch(0.58 0.07 155 / .14)"}
     return {"name": "Exemplary",
-             "line": "Ship it and learn in the open.",
+             "line": "Review the candidate against the brief.",
              "c": "oklch(0.45 0.08 155)", "s": "oklch(0.45 0.08 155 / .16)"}
 
 
@@ -564,7 +601,7 @@ def _pw_score_color(score) -> str:
 def _pw_verdict_sentence(converged: bool, gate: dict, b_scores: dict, total: int) -> str:
     """The headline verdict sentence shown in the hero."""
     if converged:
-        return f"Worth it \u00b7 total {total}/32"
+        return f"Score bar met \u00b7 total {total}/32"
     reason = (gate.get("reason") or "escalated")
     if reason == "floor_breach" and b_scores:
         ints = [v for v in b_scores.values() if isinstance(v, int)]
@@ -577,14 +614,14 @@ def _pw_verdict_sentence(converged: bool, gate: dict, b_scores: dict, total: int
 
 def _pw_sowhat(converged: bool, gate: dict) -> str | None:
     if converged:
-        return "Ready to ship."
+        return "Score bar met. Compare against the brief before choosing keep or undo."
     reason = gate.get("reason") or ""
     return _PW_REASON_PROSE.get(reason)
 
 
 def _pw_do_next_text(converged: bool, gate: dict) -> str:
     if converged:
-        return "Ship it \u2014 and watch for drift on the next iteration."
+        return "Compare this candidate with the preserved baseline and brief, then record keep or undo."
     reason = gate.get("reason") or ""
     return _PW_DO_NEXT.get(reason, "Review the trace below and decide the next move.")
 
@@ -605,9 +642,9 @@ def _pw_improved_regressed(a_scores: dict, b_scores: dict) -> tuple:
         label = f"{d['label']}: {av} \u2192 {bv} ({sign}{delta})"
         (improved if delta > 0 else regressed).append({"label": label, "note": ""})
     if not regressed:
-        regressed = [{"label": "Nothing got worse.", "note": ""}]
+        regressed = [{"label": "No score regression recorded.", "note": ""}]
     if not improved:
-        improved = [{"label": "No measured gains this pass.", "note": ""}]
+        improved = [{"label": "No score gains recorded this pass.", "note": ""}]
     return improved, regressed
 
 
@@ -1562,6 +1599,7 @@ def render(
     results_view = (
         '<div data-pw-view="results" hidden>'
         + results_section
+        + _improvement_round_section(records)
         + scorecard_block
         + process_block
         + previews_block

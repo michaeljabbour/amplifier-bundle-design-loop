@@ -12,3 +12,5 @@ overflow, fixed with a two-row layout. Live model quality/cost remains untested.
 agents ~640 (~1.16k with examples) -> ~220 tok, context ~310 -> ~145 tok. The dropped
 design-intelligence include was ~1.0k tok stripped (~2.1k raw) when the base lacked it.
 Mount import: playwright (~0.1-0.2 s) no longer loaded at mount.
+
+2026-10-28: isolated local Python 3.12 venv, all six modules installed editable from this clone. Full deterministic suite before the final extra payload/embedded-helper assertions: 274 passed, 3 skipped. Final result is recorded in docs/CONSOLIDATION-VALIDATION.md. No paid-provider run or human/audience study was performed.

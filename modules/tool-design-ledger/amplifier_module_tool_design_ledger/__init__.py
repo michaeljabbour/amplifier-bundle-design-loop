@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from amplifier_core import ToolResult
+from .improvement_round import validate_round
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +155,24 @@ class DesignLedgerTool:
                 },
             )
 
+        round_status = None
+        if "improvement_round" in record:
+            try:
+                run_rounds = [r["improvement_round"] for r in self._read_records(task_class) if r.get("run_id") == record["run_id"] and isinstance(r.get("improvement_round"), dict)]
+                prior = [r for r in run_rounds if r.get("round_id") == record["improvement_round"].get("round_id")]
+                round_status = validate_round(record["improvement_round"], prior[-1] if prior else None)
+                budget = record["improvement_round"]["budget"]
+                if run_rounds:
+                    last_budget = run_rounds[-1]["budget"]
+                    if budget["rounds_limit"] != last_budget["rounds_limit"]:
+                        raise ValueError("The recorded run budget cannot silently change")
+                    if prior and budget["rounds_used"] != prior[-1]["budget"]["rounds_used"]:
+                        raise ValueError("The same round cannot change its consumed-round count")
+                    if not prior and budget["rounds_used"] <= max(r["budget"]["rounds_used"] for r in run_rounds):
+                        raise ValueError("A new round must increment the run's consumed-round count")
+            except (ValueError, TypeError, AttributeError) as error:
+                return ToolResult(success=False, error={"message": f"Invalid improvement round: {error}. Nothing was written."})
+
         path = self._ledger_path(task_class)
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -162,6 +181,9 @@ class DesignLedgerTool:
 
         # Build stored record (shallow copy; never mutate caller's dict)
         stored = dict(record)
+        stored.pop("improvement_round_status", None)
+        if round_status is not None:
+            stored["improvement_round_status"] = round_status
         stored.pop("entry_id", None)   # discard any caller-supplied entry_id
         stored["entry_id"] = entry_id
         if "ts" not in stored:
@@ -208,7 +230,9 @@ class DesignLedgerTool:
         records = self._read_records(task_class)
 
         # Filter: accepted only
-        accepted = [r for r in records if r.get("outcome") == "accepted"]
+        accepted = [r for r in records if r.get("outcome") == "accepted"
+                    and r.get("improvement_round_status", {}).get("technical_valid", True)
+                    and r.get("improvement_round_status", {}).get("adoption_status") != "recorded_undo"]
 
         if rubric_version is not None:
             accepted = [r for r in accepted if r.get("rubric_version") == rubric_version]

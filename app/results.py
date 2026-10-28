@@ -321,7 +321,7 @@ def build_result_payload(
     # payload and the embedded report can never show two different verdicts
     # for the same run.
     ship_label = ship_verdict(total, converged=converged, blockers=blockers, bar=SHIP_BAR)
-    ship = ship_label == "Ready to ship"
+    review_ready = ship_label == "Ready for review"
     if blockers > 0:
         blocker_note = (
             f"{blockers} blocking ground-truth issue"
@@ -347,7 +347,9 @@ def build_result_payload(
         "root_cause": root_cause,
         "total": total,
         "bar": SHIP_BAR,
-        "ship": ship,
+        "ship": False,
+        "review_ready": review_ready,
+        "adoption_status": "not established by score or convergence",
         "ship_label": ship_label,
         "blockers": blockers,
         "blocker_note": blocker_note,

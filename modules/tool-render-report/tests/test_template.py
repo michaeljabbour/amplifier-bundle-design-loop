@@ -600,7 +600,7 @@ def test_report_results_view_still_present(tmp_path: Path) -> None:
 
     assert 'data-pw-view="results"' in report, "RESULTS view container missing"
     assert "scorecard" in low and "weakest first" in low, "A\u2192B scorecard missing from RESULTS"
-    assert "worth it" in low or "stopped" in low, "Verdict sentence missing from RESULTS"
+    assert "score bar met" in low or "stopped" in low, "Verdict sentence missing from RESULTS"
 
 
 def test_no_external_script_src_anywhere(tmp_path: Path) -> None:

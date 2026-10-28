@@ -1,0 +1,386 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:amplifier:improvement-round:v1",
+  "title": "Improvement round/v1",
+  "description": "A bounded comparison record; technical checks and reported human adoption are separate. This record is not runtime authorization.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "round_id",
+    "brief",
+    "baseline",
+    "candidate",
+    "change",
+    "gates",
+    "comparison",
+    "decision",
+    "budget"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "improvement-round/v1"
+    },
+    "round_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "brief": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent",
+        "audience",
+        "source_ref",
+        "lens_status",
+        "must_preserve"
+      ],
+      "properties": {
+        "intent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "audience": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lens_status": {
+          "enum": [
+            "stated",
+            "assumed"
+          ]
+        },
+        "must_preserve": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_ref",
+        "sha256"
+      ],
+      "properties": {
+        "artifact_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_ref",
+        "sha256"
+      ],
+      "properties": {
+        "artifact_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "hypothesis",
+        "predicted_benefit",
+        "regression_risk"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "hillclimb",
+            "jump"
+          ]
+        },
+        "hypothesis": {
+          "type": "string",
+          "minLength": 1
+        },
+        "predicted_benefit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "regression_risk": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "critical",
+          "status",
+          "evidence_ref",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "critical": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail",
+              "unknown",
+              "not-applicable"
+            ]
+          },
+          "evidence_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "brief_ref",
+        "observations",
+        "taste",
+        "elegance"
+      ],
+      "properties": {
+        "brief_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "taste": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "reason"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "hypothesis",
+                "observed",
+                "unknown"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "elegance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "reason"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "hypothesis",
+                "observed",
+                "unknown"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "authority",
+        "source_ref",
+        "reason",
+        "rollback_ref"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "proposed",
+            "keep",
+            "undo",
+            "defer"
+          ]
+        },
+        "authority": {
+          "enum": [
+            "human",
+            "delegated",
+            "none"
+          ]
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rollback_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rounds_limit",
+        "rounds_used",
+        "stop_reason"
+      ],
+      "properties": {
+        "rounds_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rounds_used": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "stop_reason": {
+          "enum": [
+            "continue",
+            "success",
+            "no-meaningful-gain",
+            "budget-exhausted",
+            "gate-blocked",
+            "owner-stop"
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "properties": {
+              "action": {
+                "enum": [
+                  "keep",
+                  "undo"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "decision": {
+            "properties": {
+              "authority": {
+                "enum": [
+                  "human",
+                  "delegated"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "properties": {
+              "action": {
+                "const": "keep"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "gates": {
+            "not": {
+              "contains": {
+                "properties": {
+                  "critical": {
+                    "const": true
+                  },
+                  "status": {
+                    "enum": [
+                      "fail",
+                      "unknown"
+                    ]
+                  }
+                },
+                "required": [
+                  "critical",
+                  "status"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "x-semantic-constraints": [
+    "comparison.brief_ref must equal brief.source_ref.",
+    "Gate IDs must be unique.",
+    "rounds_used cannot exceed rounds_limit; when equal stop_reason cannot be continue.",
+    "Critical fail or unknown blocks a recorded keep; a score does not bypass the gate.",
+    "A human/delegated decision cites the actual user/delegation source; the record cannot authenticate it or grant runtime authorization.",
+    "Baseline content/hash must remain the same within a round ID.",
+    "Taste and elegance remain independent reasons; no combined score."
+  ]
+}

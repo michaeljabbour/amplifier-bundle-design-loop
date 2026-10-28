@@ -1,0 +1,62 @@
+{
+  "schema_version": "improvement-round/v1",
+  "round_id": "fictional-budget",
+  "brief": {
+    "intent": "Clarify an incident note without losing its acknowledgement.",
+    "audience": "Fictional readers awaiting recovery",
+    "source_ref": "fictional-brief/v1",
+    "lens_status": "stated",
+    "must_preserve": [
+      "Acknowledgement of interruption"
+    ]
+  },
+  "baseline": {
+    "artifact_ref": "fixtures/improvement-round/baseline.html",
+    "sha256": "ba4d185574e87676b956c8b8449f5b1d03f14c879079137247f582a34f23bac7"
+  },
+  "candidate": {
+    "artifact_ref": "fixtures/improvement-round/candidate.html",
+    "sha256": "a67ba9d4f1e42b64f197f06be71ba42ac178fdf00fa9d9a5803943ba96b21633"
+  },
+  "change": {
+    "mode": "hillclimb",
+    "hypothesis": "A paragraph break makes the action easier to find.",
+    "predicted_benefit": "Clearer scan while keeping the same words.",
+    "regression_risk": "Extra space may weaken the note\u2019s compact rhythm."
+  },
+  "gates": [
+    {
+      "id": "content-preserved",
+      "critical": true,
+      "status": "pass",
+      "evidence_ref": "fixture-word-comparison",
+      "reason": "The words are unchanged; this is a fixture observation, not an audience test."
+    }
+  ],
+  "comparison": {
+    "brief_ref": "fictional-brief/v1",
+    "observations": [
+      "One paragraph break was added."
+    ],
+    "taste": {
+      "status": "unknown",
+      "reason": "No actual author was asked in this fictional fixture."
+    },
+    "elegance": {
+      "status": "hypothesis",
+      "reason": "Structure may make scanning easier; no audience result is claimed."
+    }
+  },
+  "decision": {
+    "action": "defer",
+    "authority": "none",
+    "source_ref": "no-user-decision-supplied",
+    "reason": "Budget ended with adoption undecided.",
+    "rollback_ref": "fixtures/improvement-round/baseline.html"
+  },
+  "budget": {
+    "rounds_limit": 2,
+    "rounds_used": 2,
+    "stop_reason": "budget-exhausted"
+  }
+}

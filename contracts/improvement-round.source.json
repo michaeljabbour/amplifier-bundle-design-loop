@@ -1,0 +1,11 @@
+{
+  "canonical_owner": "amplifier-skill-taste",
+  "canonical_path": "skills/improve-taste-and-elegance/references/improvement-round.schema.json",
+  "contract_id": "urn:amplifier:improvement-round:v1",
+  "source_sha256": "0ba57926a11b35029572208330cea8c15564559aaf47e1f99a3224f2c2674be0",
+  "capture": "2026-10-28 local campaign working tree; no remote revision or publication claimed",
+  "vendored_file": "taste-improvement-round.v1.schema.json",
+  "policy": "Byte-identical consumer contract snapshot, not a second maintained method. Update deliberately from the canonical owner and rerun compatibility cases. Runtime validation is self-contained in the ledger adapter.",
+  "canonical_revision": "b3d232b2d9cd2f54ea6cdc3ea44a82bc901c0f7d",
+  "publication_status": "Local campaign commit; not pushed or published by this work"
+}

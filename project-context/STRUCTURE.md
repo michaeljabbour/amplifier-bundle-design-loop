@@ -9,3 +9,7 @@
 - `docs/run-history.md`: run workflow, operations, and acceptance checks.
 - `behaviors/design-loop.yaml`: default (lean) behavior; `behaviors/design-loop-full.yaml`: opt-in + design-intelligence.
 - `scripts/measure_footprint.py`: per-request prompt footprint estimator; `tests/test_footprint.py` pins budgets and tool contracts.
+
+- `contracts/`: hashed Taste improvement-round schema snapshot and retained MIT notice.
+- `fixtures/improvement-round/`: fictional keep/undo/budget records and hashed artifacts.
+- `modules/tool-design-ledger/.../improvement_round.py`: self-contained deterministic consumer validation.
