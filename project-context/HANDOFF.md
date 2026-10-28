@@ -17,3 +17,9 @@ design-converge with `bundle_ref` set. Not pushed.
 ## 2026-10-28 — isolated consolidation work
 
 Added the optional Taste improvement-round/v1 consumer in the ledger, recipe-helper handoff, report and app review-readiness distinction. Existing ledgers remain readable; no source data was migrated or deleted. Work is in an isolated campaign clone based on committed 066af76; the original checkout’s unfinished work was not copied or changed. Run `.venv/bin/python -m pytest modules tests -q`. Provider efficacy and runtime authorization are not established by these checks. See docs/IMPROVEMENT-ROUNDS.md.
+
+## 2026-10-28 — publication preflight
+
+The committed improvement-round adapter is ready for source publication after a fresh full deterministic run: 277 passed, 3 skipped, with existing deprecation warnings retained. The public main branch is still the original 066af76 baseline, so no upstream reconciliation is needed. The source publication and CI readback are recorded in the campaign's supporting-publications record; local checks alone do not establish a remote result.
+
+Next: inspect that publication record for final status, then address native host/provider acceptance separately. No runtime service was installed or activated, no source data was retired, and no human-benefit or live-provider result is established by these checks.
