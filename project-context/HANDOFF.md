@@ -23,3 +23,5 @@ Added the optional Taste improvement-round/v1 consumer in the ledger, recipe-hel
 The committed improvement-round adapter is ready for source publication after a fresh full deterministic run: 277 passed, 3 skipped, with existing deprecation warnings retained. The public main branch is still the original 066af76 baseline, so no upstream reconciliation is needed. The source publication and CI readback are recorded in the campaign's supporting-publications record; local checks alone do not establish a remote result.
 
 Next: inspect that publication record for final status, then address native host/provider acceptance separately. No runtime service was installed or activated, no source data was retired, and no human-benefit or live-provider result is established by these checks.
+
+Clean CI exposed a missing test dependency after that publication: the new schema test imports `jsonschema`, which the local venv already contained. The ledger now declares it in the optional `test` extra and the workflow installs that extra. The initial failed run remains visible; wait for the corrected commit's CI before calling publication validation complete.

@@ -106,6 +106,7 @@ See **[docs/DEV_SETUP.md](docs/DEV_SETUP.md)** for the full environment guide.
 ```bash
 uv venv && source .venv/bin/activate
 uv pip install amplifier-core pytest pytest-asyncio playwright
+uv pip install -e 'modules/tool-design-ledger[test]'  # schema validation is test-only
 python -m playwright install chromium
 python -m pytest modules tests -v          # deterministic suite
 RUN_MANUAL=1 python -m pytest tests/integration -m manual -v -s   # needs a provider key

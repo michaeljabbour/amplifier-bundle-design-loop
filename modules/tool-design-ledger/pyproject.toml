@@ -4,6 +4,9 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+test = ["jsonschema>=4,<5"]
+
 [project.entry-points."amplifier.modules"]
 tool-design-ledger = "amplifier_module_tool_design_ledger:mount"
 

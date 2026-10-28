@@ -3,6 +3,8 @@
 Use an isolated worktree when the main checkout contains unfinished work. Keep
 bundle composition changes separate from app behavior. Install all six local
 modules editable in the worktree's own venv so tests exercise the correct source.
+Install the ledger with its test extra (`-e 'modules/tool-design-ledger[test]'`):
+the contract tests use `jsonschema`, while the ledger runtime has no new dependency.
 
 Run `python -m pytest modules tests -q`; offline composition tests also require
 `amplifier_foundation`. Browser QA requires Chromium and the app dependencies.
