@@ -15,11 +15,11 @@ model_role: vision
 # README.md "Per-request footprint".
 tools:
   - module: tool-render
-    source: ../modules/tool-render
+    source: git+https://github.com/michaeljabbour/amplifier-bundle-design-loop@main#subdirectory=modules/tool-render
   - module: tool-target-state
-    source: ../modules/tool-target-state
+    source: git+https://github.com/michaeljabbour/amplifier-bundle-design-loop@main#subdirectory=modules/tool-target-state
   - module: tool-render-report
-    source: ../modules/tool-render-report
+    source: git+https://github.com/michaeljabbour/amplifier-bundle-design-loop@main#subdirectory=modules/tool-render-report
 ---
 
 # design-judge
